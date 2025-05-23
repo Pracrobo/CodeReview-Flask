@@ -25,12 +25,12 @@ class Config:
     # 인덱싱 및 임베딩 설정
     CHUNK_SIZE = 4000  # RecursiveCharacterTextSplitter 청크 크기 (문서 분할 시)
     CHUNK_OVERLAP = 400  # RecursiveCharacterTextSplitter 청크 오버랩 (문서 분할 시)
-    EMBEDDING_BATCH_SIZE = 100  # Gemini API 임베딩 요청 시 배치 크기
+    EMBEDDING_BATCH_SIZE = 50  # Gemini API 임베딩 요청 시 배치 크기
     FAISS_ADD_BATCH_SIZE = 100  # FAISS 인덱스에 문서 추가 시 배치 크기
     MAX_RETRIES = 10  # API 호출 최대 재시도 횟수
 
     # API 오류별 대기 시간 설정 (초 단위)
-    QUOTA_ERROR_SLEEP_TIME = 60  # 할당량 오류 시 대기 시간
+    QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
     GENERAL_API_ERROR_SLEEP_TIME = 5  # 일반 API 오류 시 대기 시간
 
     # 문서 파일 확장자
