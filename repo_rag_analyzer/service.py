@@ -186,7 +186,9 @@ class RepositoryService:
                 "query": query,
                 "search_type": search_type,
                 "answer": rag_response,
-                "timestamp": datetime.now().isoformat(),  # UTC 시간으로 변경하려면 datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(
+                    timezone.utc
+                ).isoformat(),  # UTC 시간으로 변경
             }
 
         except RAGError as e:

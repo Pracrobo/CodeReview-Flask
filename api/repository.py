@@ -169,7 +169,7 @@ def get_repository_status(repo_name):
             return error_response(
                 message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data.get('error', '알 수 없는 오류')}",
                 error_code="INDEXING_FAILED",
-                status_code=200,  # 상태는 가져왔으므로 200, 내용은 실패
+                status_code=500,  # HTTP 200 대신 500 (Internal Server Error) 또는 적절한 오류 코드 사용
             )
 
         return success_response(data=status_data)

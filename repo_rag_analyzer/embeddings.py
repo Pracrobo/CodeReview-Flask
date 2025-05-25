@@ -10,7 +10,6 @@ from common.exceptions import EmbeddingError
 
 # 로거 설정
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 
 
 class GeminiAPIEmbeddings(Embeddings):

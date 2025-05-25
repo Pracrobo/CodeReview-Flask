@@ -26,7 +26,7 @@ faiss.omp_set_num_threads(1)  # CPU 스레드 수 제한으로 안정성 향상
 
 # 로거 설정
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
+# logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT) # 애플리케이션 진입점에서 설정
 
 
 def get_repo_primary_language(repo_url, token=None):
