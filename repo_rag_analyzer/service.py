@@ -45,17 +45,22 @@ class RepositoryService:
         if repo_name in self.repository_status:
             current_status = self.repository_status[repo_name].get("status")
             if current_status == "indexing" or current_status == "pending":
-                logger.info(f"저장소 '{repo_name}'은 이미 인덱싱 중이거나 대기 중입니다.")
+                logger.info(
+                    f"저장소 '{repo_name}'은 이미 인덱싱 중이거나 대기 중입니다."
+                )
                 # 현재 진행 상태를 반환하여 클라이언트가 혼동하지 않도록 함
                 return self.repository_status[repo_name]
             elif current_status == "completed":
-                logger.info(f"저장소 '{repo_name}'은 이미 성공적으로 인덱싱되었습니다. 재인덱싱을 원하시면 기존 인덱스를 삭제 후 시도해주세요.")
+                logger.info(
+                    f"저장소 '{repo_name}'은 이미 성공적으로 인덱싱되었습니다. 재인덱싱을 원하시면 기존 인덱스를 삭제 후 시도해주세요."
+                )
                 # 이미 완료된 상태 정보 반환
                 return self.repository_status[repo_name]
             elif current_status == "failed":
-                logger.info(f"저장소 '{repo_name}'은 이전에 인덱싱에 실패했습니다. 재시도합니다.")
+                logger.info(
+                    f"저장소 '{repo_name}'은 이전에 인덱싱에 실패했습니다. 재시도합니다."
+                )
                 # 실패한 경우, 새로 인덱싱 시도 (아래 로직으로 계속 진행)
-
 
         # 상태 초기화 또는 업데이트
         current_time_iso = datetime.now(timezone.utc).isoformat()
