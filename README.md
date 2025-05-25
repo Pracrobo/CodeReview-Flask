@@ -13,11 +13,18 @@ AIssue 프로젝트의 백엔드 Flask 애플리케이션입니다. GitHub 저�
 
 ## API 사용 예시
 
-아래 예시들은 서비스가 로컬 환경의 3002 포트에서 실행 중이라고 가정합니다.
+아래 예시들은 서비스가 로컬 환경의 3002 포트에서 실행 중이라고 가정합니다. **참
+고:** Windows `cmd.exe`에서 아래 curl 명령어를 실행할 경우, JSON 데이터 내의 큰
+따옴표(`"`)를 `\`로 이스케이프 처리해야 할 수 있습니다. (예:
+`"{ \"repo_url\": \"...\" }"`) 또는 PowerShell을 사용하거나, JSON 데이터를 파일
+로 저장 후 `-d @filename.json` 형태로 사용하는 것을 권장합니다. 아래 예시는 Unix
+계열 쉘 또는 PowerShell에서 바로 사용 가능합니다.
 
 ### 1. 저장소 인덱싱 요청
 
 특정 GitHub 저장소의 인덱싱을 시작합니다.
+
+**Unix/PowerShell:**
 
 ```bash
 curl -X POST http://localhost:3002/api/repository/index \
@@ -25,6 +32,14 @@ curl -X POST http://localhost:3002/api/repository/index \
 -d '{
   "repo_url": "https://github.com/pallets/flask"
 }'
+```
+
+**Windows cmd.exe (큰따옴표 이스케이프):**
+
+```bash
+curl -X POST http://localhost:3002/api/repository/index ^
+-H "Content-Type: application/json" ^
+-d "{ \"repo_url\": \"https://github.com/pallets/flask\" }"
 ```
 
 **응답 예시 (인덱싱 시작 또는 진행 중):**
@@ -77,6 +92,8 @@ curl -X POST http://localhost:3002/api/repository/index \
 
 인덱싱된 저장소에서 코드 또는 문서에 대해 질의합니다.
 
+**Unix/PowerShell:**
+
 ```bash
 curl -X POST http://localhost:3002/api/repository/search \
 -H "Content-Type: application/json" \
@@ -85,6 +102,14 @@ curl -X POST http://localhost:3002/api/repository/search \
   "query": "Flask에서 블루프린트는 어떻게 사용하나요?",
   "search_type": "document"
 }'
+```
+
+**Windows cmd.exe (큰따옴표 이스케이프):**
+
+```bash
+curl -X POST http://localhost:3002/api/repository/search ^
+-H "Content-Type: application/json" ^
+-d "{ \"repo_url\": \"https://github.com/pallets/flask\", \"query\": \"Flask에서 블루프린트는 어떻게 사용하나요?\", \"search_type\": \"document\" }"
 ```
 
 **응답 예시:**
@@ -106,8 +131,8 @@ curl -X POST http://localhost:3002/api/repository/search \
 
 ### 3. 저장소 인덱싱 상태 확인
 
-특정 저장소의 현재 인덱싱 상태를 확인합니다. `repo_name`은 URL에서 추출된 순수저
-장소 이름입니다.
+특정 저장소의 현재 인덱싱 상태를 확인합니다. `repo_name`은 URL에서 추출된 순수
+저장소 이름입니다.
 
 ```bash
 curl -X GET http://localhost:3002/api/repository/status/flask
