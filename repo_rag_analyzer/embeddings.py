@@ -1,7 +1,7 @@
 import logging
 import time
 import traceback
-from typing import List, Optional
+from typing import List, Tuple
 
 import google.generativeai as genai
 from langchain_core.embeddings import Embeddings
@@ -15,7 +15,7 @@ logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 
 
 class GeminiAPIEmbeddings(Embeddings):
-    """Gemini API를 사용하여 텍스트 임베딩을 생성하는 클래스."""
+    """Gemini API 텍스트 임베딩 생성 클래스"""
 
     def __init__(
         self,
@@ -30,7 +30,7 @@ class GeminiAPIEmbeddings(Embeddings):
         genai.configure(api_key=Config.GEMINI_API_KEY)  # API 키 설정
 
     def _calculate_sleep_time(self, is_quota_error: bool) -> float:
-        """오류 유형에 따라 대기 시간을 계산합니다."""
+        """오류 유형별 API 재시도 대기 시간 계산"""
         if is_quota_error:
             logger.warning(
                 f"할당량 오류 발생. {Config.QUOTA_ERROR_SLEEP_TIME}초 후 재시도합니다."
@@ -42,9 +42,14 @@ class GeminiAPIEmbeddings(Embeddings):
             )
             return Config.GENERAL_API_ERROR_SLEEP_TIME
 
-    def embed_documents(self, texts: List[str]) -> List[Optional[List[float]]]:
-        """여러 문서에 대한 임베딩을 생성합니다."""
-        all_embs: List[Optional[List[float]]] = []
+    def embed_documents(self, texts: List[str]) -> Tuple[List[List[float]], List[int]]:
+        """다수 문서 임베딩 (성공 임베딩, 실패 원본 인덱스 반환)"""
+        successful_embeddings: List[List[float]] = []
+        failed_original_indices: List[int] = []
+
+        successful_count = 0
+        failed_count = 0
+
         batch_size = Config.EMBEDDING_BATCH_SIZE
         total_batches = (len(texts) + batch_size - 1) // batch_size
 
@@ -60,50 +65,75 @@ class GeminiAPIEmbeddings(Embeddings):
             )
 
             retries_count = 0
-            current_batch_embeddings: Optional[List[List[float]]] = None
-            while retries_count < self.max_retries:
-                try:
-                    result = genai.embed_content(
-                        model=self.model_name,
-                        content=batch_texts,
-                        task_type=self.document_task_type,
-                    )
-                    current_batch_embeddings = result["embedding"]
-                    all_embs.extend(current_batch_embeddings)
-                    logger.debug(f"배치 {current_batch_num} 임베딩 성공.")
-                    break  # 성공 시 루프 탈출
-                except Exception as e_emb_docs:
-                    retries_count += 1
-                    logger.warning(
-                        f"임베딩 중 오류 (시도 {retries_count}/{self.max_retries}): {e_emb_docs}"
-                    )
-                    is_quota_error = "429" in str(e_emb_docs)  # 할당량 오류인지 확인
-                    if retries_count < self.max_retries:
-                        sleep_time = self._calculate_sleep_time(is_quota_error)
-                        time.sleep(sleep_time)
-                    else:
-                        logger.error(
-                            f"배치 임베딩 실패 (최대 재시도 도달): {batch_texts[:2]}..."
+            try:
+                while retries_count < self.max_retries:
+                    try:
+                        result = genai.embed_content(
+                            model=self.model_name,
+                            content=batch_texts,
+                            task_type=self.document_task_type,
                         )
-                        # 실패한 배치에 대해 None을 추가하여 전체 길이를 유지
-                        all_embs.extend([None] * len(batch_texts))
-                        break  # 재시도 모두 실패 시 루프 탈출
+                        current_batch_embeddings = result["embedding"]
+                        successful_embeddings.extend(current_batch_embeddings)
+                        successful_count += len(current_batch_embeddings)
+                        # 성공 시 처리 수 증가
+                        logger.debug(
+                            f"배치 {current_batch_num} 임베딩 성공 ({len(current_batch_embeddings)}개)."
+                        )
+                        break  # 성공 시 루프 탈출
+                    except Exception as e_emb_docs:
+                        retries_count += 1
+                        logger.warning(
+                            f"임베딩 배치 {current_batch_num} 오류 (시도 {retries_count}/{self.max_retries}): {e_emb_docs}"
+                        )
+                        is_quota_error = "429" in str(e_emb_docs)
+                        if retries_count < self.max_retries:
+                            sleep_time = self._calculate_sleep_time(is_quota_error)
+                            time.sleep(sleep_time)
+                        else:
+                            logger.error(
+                                f"배치 {current_batch_num} 임베딩 최종 실패 (최대 재시도 도달)."
+                            )
+                            # 배치 전체 실패 시, 해당 배치 모든 문서 인덱스 실패 기록
+                            for k_idx in range(len(batch_texts)):
+                                original_idx = j_idx + k_idx
+                                failed_original_indices.append(original_idx)
+                                logger.debug(
+                                    f"문서 임베딩 실패 기록: 원본 인덱스 {original_idx}, 내용: '{texts[original_idx][:100]}...'"
+                                )
+                            failed_count += len(batch_texts)
+                            # 실패 시에도 처리된 것으로 간주
+                            break  # 재시도 모두 실패 시 루프 탈출
+            except Exception as outer_e:
+                # 예기치 않은 오류로 배치 처리 실패 시 (드문 경우)
+                logger.error(
+                    f"배치 {current_batch_num} 처리 중 예기치 않은 외부 오류: {outer_e}"
+                )
+                for k_idx in range(len(batch_texts)):
+                    original_idx = j_idx + k_idx
+                    failed_original_indices.append(original_idx)
+                    logger.debug(
+                        f"문서 임베딩 실패 기록 (외부 오류): 원본 인덱스 {original_idx}"
+                    )
+                failed_count += len(batch_texts)
 
-            if j_idx + batch_size < len(texts):
-                # 마지막 배치가 아닌 경우, 할당량 오류 방지를 위해 짧은 시간 대기
-                # 실제로는 _calculate_sleep_time 에서 이미 대기하므로, 여기서는 불필요할 수 있음
-                # time.sleep(1) # 필요시 활성화
-                pass  # 이미 _calculate_sleep_time 에서 처리
+            # (선택) API 할당량 관리용 짧은 대기
+            # if j_idx + batch_size < len(texts):
+            # time.sleep(Config.GENERAL_API_ERROR_SLEEP_TIME / 10) # 예시: 일반 오류 대기 시간의 1/10
 
-        valid_embeddings_count = sum(1 for emb in all_embs if emb is not None)
-        if valid_embeddings_count != len(all_embs):
-            logger.warning(
-                f"{len(all_embs) - valid_embeddings_count}개의 임베딩에 실패하여 건너뛰었습니다."
-            )
-        return all_embs
+        logger.info(
+            f"임베딩 처리 완료. 총 시도 문서: {len(texts)}, "
+            f"성공: {successful_count}, 실패: {failed_count} (실패 인덱스 수: {len(failed_original_indices)})"
+        )
+
+        if successful_count == 0 and failed_count > 0:
+            logger.warning("모든 문서의 임베딩 생성에 실패했습니다.")
+
+        # 반환: 성공 임베딩 리스트, 실패 문서 원본 인덱스 리스트
+        return successful_embeddings, sorted(list(set(failed_original_indices)))
 
     def embed_query(self, text: str) -> List[float]:
-        """단일 쿼리에 대한 임베딩을 생성합니다."""
+        """단일 쿼리 임베딩 생성"""
         retries_count = 0
         logger.info(f"쿼리 임베딩 중 (Task: {self.query_task_type})...")
         while retries_count < self.max_retries:
@@ -125,7 +155,7 @@ class GeminiAPIEmbeddings(Embeddings):
                     sleep_time = self._calculate_sleep_time(is_quota_error)
                     time.sleep(sleep_time)
                 else:
-                    # 오류 발생 시 스택 트레이스 로깅
+                    # 오류 시 스택 트레이스 로깅
                     detailed_error_info = traceback.format_exc()
                     logger.error(
                         f"쿼리 임베딩 실패 (최대 재시도 도달). 오류: {e_emb_query}\n스택 트레이스:\n{detailed_error_info}"
@@ -133,5 +163,5 @@ class GeminiAPIEmbeddings(Embeddings):
                     raise EmbeddingError(
                         f"쿼리 임베딩에 실패했습니다 (재시도 {self.max_retries}회 시도 후): {text[:50]}..."
                     ) from e_emb_query
-        # 이론적으로 이 지점에 도달해서는 안 됩니다.
+        # 이론상 도달 불가 지점
         raise EmbeddingError("쿼리 임베딩 로직의 예기치 않은 종료.")

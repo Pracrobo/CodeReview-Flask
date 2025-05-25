@@ -98,6 +98,8 @@ if __name__ == "__main__":
     except RAGError as e:  # RAG 과정에서의 오류 처리
         logger.error(f"검색 또는 RAG 처리 중 오류 발생: {e}")
     except Exception as e:
-        logger.error(f"예상치 못한 오류 발생: {e}", exc_info=True)  # 스택 트레이스 포함
+        logger.error(
+            f"예상치 못한 오류 발생: {e}", exc_info=True
+        )  # 스택 트레이스 포함 로깅
     finally:
         logger.info("\n스크립트가 종료되었습니다.")

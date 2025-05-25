@@ -23,22 +23,22 @@ logger = logging.getLogger(__name__)
 
 
 class RepositoryService:
-    """저장소 인덱싱 및 검색 서비스를 제공하는 클래스"""
+    """저장소 인덱싱/검색 서비스 클래스"""
 
     def __init__(self):
-        # 저장소 상태를 메모리에 저장 (실제 운영에서는 데이터베이스 사용 권장)
+        # 저장소 상태 (메모리, 운영 시 DB 권장)
         self.repository_status: Dict[str, Dict[str, Any]] = {}
 
     def _get_repo_name_from_url(self, repo_url: str) -> str:
-        """URL에서 저장소 이름을 추출합니다."""
+        """URL에서 저장소 이름 추출"""
         return repo_url.split("/")[-1].removesuffix(".git")
 
     def _get_local_repo_path(self, repo_name: str) -> str:
-        """저장소의 로컬 경로를 반환합니다."""
+        """저장소 로컬 경로 반환"""
         return os.path.join(Config.BASE_CLONED_DIR, repo_name)
 
     def index_repository(self, repo_url: str) -> Dict[str, Any]:
-        """저장소를 인덱싱합니다."""
+        """저장소 인덱싱 서비스 로직"""
         repo_name = self._get_repo_name_from_url(repo_url)
         local_repo_path = self._get_local_repo_path(repo_name)
 
@@ -99,7 +99,7 @@ class RepositoryService:
     def search_repository(
         self, repo_url: str, query: str, search_type: str = "code"
     ) -> Dict[str, Any]:
-        """저장소에서 검색을 수행합니다."""
+        """저장소 검색 서비스 로직"""
         repo_name = self._get_repo_name_from_url(repo_url)
 
         # 인덱스 존재 여부 확인
@@ -165,7 +165,7 @@ class RepositoryService:
             raise ServiceError(error_msg) from e
 
     def get_repository_status(self, repo_name: str) -> Dict[str, Any]:
-        """저장소 상태를 반환합니다."""
+        """저장소 상태 조회 서비스 로직"""
         if repo_name not in self.repository_status:
             # 디스크에서 인덱스 존재 여부 확인
             code_exists = self._check_index_exists(repo_name, "code")
@@ -184,7 +184,7 @@ class RepositoryService:
         return self.repository_status[repo_name]
 
     def _update_error_status(self, repo_name: str, error_msg: str):
-        """오류 상태를 업데이트합니다."""
+        """오류 상태 업데이트"""
         if repo_name in self.repository_status:
             self.repository_status[repo_name].update(
                 {
@@ -195,7 +195,7 @@ class RepositoryService:
             )
 
     def _check_index_exists(self, repo_name: str, index_type: str) -> bool:
-        """인덱스 파일 존재 여부를 확인합니다."""
+        """인덱스 파일 존재 여부 확인"""
         if index_type == "code":
             index_path = os.path.join(Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code")
         else:

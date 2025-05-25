@@ -6,7 +6,7 @@ from .exceptions import ValidationError
 
 
 def validate_repo_url(data: Optional[Dict[str, Any]]) -> str:
-    """저장소 URL을 검증합니다."""
+    """저장소 URL 유효성 검증"""
     if not data or "repo_url" not in data:
         raise ValidationError("repo_url이 필요합니다.")
 
@@ -29,7 +29,7 @@ def validate_repo_url(data: Optional[Dict[str, Any]]) -> str:
 
 
 def validate_search_request(data: Optional[Dict[str, Any]]) -> Tuple[str, str, str]:
-    """검색 요청 데이터를 검증합니다."""
+    """검색 요청 데이터 유효성 검증"""
     if not data:
         raise ValidationError("요청 데이터가 필요합니다.")
 

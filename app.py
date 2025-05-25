@@ -6,7 +6,7 @@ from config import Config
 
 
 def create_app():
-    """Flask 애플리케이션 팩토리 함수"""
+    """Flask 앱 팩토리"""
     app = Flask(__name__)
 
     # 로깅 설정

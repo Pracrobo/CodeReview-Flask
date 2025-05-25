@@ -16,7 +16,7 @@ repo_service = RepositoryService()
 
 @repository_bp.route("/repository/index", methods=["POST"])
 def index_repository():
-    """저장소를 인덱싱합니다."""
+    """저장소 인덱싱 API"""
     try:
         # Content-Type 검증
         if not request.is_json:
@@ -83,7 +83,7 @@ def index_repository():
 
 @repository_bp.route("/repository/search", methods=["POST"])
 def search_repository():
-    """저장소에서 검색을 수행합니다."""
+    """저장소 검색 API"""
     try:
         # Content-Type 검증
         if not request.is_json:
@@ -158,7 +158,7 @@ def search_repository():
 
 @repository_bp.route("/repository/status/<repo_name>", methods=["GET"])
 def get_repository_status(repo_name):
-    """저장소 인덱싱 상태를 확인합니다."""
+    """저장소 인덱싱 상태 확인 API"""
     try:
         status = repo_service.get_repository_status(repo_name)
         return jsonify({"status": "success", "data": status}), 200

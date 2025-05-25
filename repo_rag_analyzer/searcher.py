@@ -18,7 +18,7 @@ logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 
 
 def translate_code_query_to_english(korean_text: str, llm_model_name: str) -> str:
-    """코드 관련 한국어 질의를 영어로 번역합니다."""
+    """코드 관련 한국어 질의 영어 번역"""
     try:
         llm = genai.GenerativeModel(llm_model_name)
         prompt = f"""
@@ -41,7 +41,7 @@ def translate_code_query_to_english(korean_text: str, llm_model_name: str) -> st
 
 
 def translate_to_english(korean_text: str, llm_model_name: str) -> str:
-    """일반 한국어 텍스트를 영어로 번역합니다."""
+    """일반 한국어 텍스트 영어 번역"""
     try:
         llm = genai.GenerativeModel(llm_model_name)
         prompt = f"""
@@ -69,7 +69,7 @@ def search_and_rag(
     top_k: int = Config.DEFAULT_TOP_K,
     similarity_threshold: float = Config.DEFAULT_SIMILARITY_THRESHOLD,
 ) -> Optional[str]:
-    """특정 벡터 저장소에서 검색을 수행하고, 검색된 내용을 바탕으로 LLM을 사용하여 답변을 생성합니다."""
+    """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(
             f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
@@ -104,7 +104,7 @@ def search_and_rag(
         filtered_results = [
             (doc, score)
             for doc, score in search_results_with_scores
-            if score <= (1 - adjusted_threshold)  # FAISS는 거리 점수이므로 변환
+            if score <= (1 - adjusted_threshold)  # FAISS 거리 점수를 유사도로 변환
         ]
 
         logger.info(
@@ -116,7 +116,7 @@ def search_and_rag(
             return "유사도가 충분히 높은 검색 결과가 없습니다."
 
         for i, (doc, score) in enumerate(filtered_results):
-            similarity_percent = (1 - score) * 100  # 거리 점수를 유사도 백분율로 변환
+            similarity_percent = (1 - score) * 100  # 거리 점수를 유사도(%)로 변환
             logger.info(
                 f"  {i+1}. 유사도: {similarity_percent:.1f}%, 소스: {doc.metadata.get('source', '알 수 없음')}, 내용 (일부): {doc.page_content[:100]}..."
             )

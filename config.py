@@ -2,18 +2,18 @@ import os
 from dotenv import load_dotenv
 from langchain_text_splitters import Language
 
-# .env 파일에서 환경 변수 로드
+# .env 환경 변수 로드
 load_dotenv()
 
 
 class Config:
-    """애플리케이션 설정 값을 담는 클래스"""
+    """애플리케이션 설정 클래스"""
 
     # API 키
     GITHUB_API_TOKEN = os.getenv("GITHUB_API_TOKEN")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    # 모델 이름 (2025년 5월 최신 모델 기준, 변경 금지)
+    # 모델 이름 (지정된 최신 모델, 변경 주의)
     DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-exp-03-07"
     DEFAULT_LLM_MODEL = "gemini-2.5-flash-preview-05-20"
 
@@ -48,9 +48,10 @@ class Config:
     API_VERSION = "v1"
     MAX_REPOSITORIES = 100  # 최대 저장소 개수 제한
     REQUEST_TIMEOUT = 300  # 요청 타임아웃 (초)
+    MAX_REPO_SIZE_MB = 3  # 최대 저장소 크기 (MB)
 
 
-# 지원 언어 및 해당 파일 확장자, Langchain Language Enum 매핑
+# 지원 언어, 확장자, Langchain Enum 매핑
 LANGUAGE_TO_DETAILS = {
     "python": {"ext": ".py", "lang_enum": Language.PYTHON},
     "javascript": {"ext": ".js", "lang_enum": Language.JS},
