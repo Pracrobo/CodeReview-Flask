@@ -33,15 +33,8 @@ def index_repository():
         data = request.get_json(force=True)
         repo_url = validate_repo_url(data)
 
-        # 서비스의 index_repository_async (또는 유사한 이름의 새 메서드)를 호출하여
-        # 초기 상태를 받고, 실제 작업은 백그라운드에서 수행하도록 요청.
-        # 여기서는 기존 index_repository를 수정하여 초기 상태만 먼저 반환한다고 가정.
-
-        # 1. 초기 상태 설정 및 반환 요청
-        # (이 부분은 service.py의 index_repository가 수정되어 초기 상태를 반환한다고 가정)
-        initial_status_result = repo_service.prepare_indexing(
-            repo_url
-        )  # 새 메서드 또는 수정된 메서드
+        # 인덱싱 준비 및 초기 상태 확인
+        initial_status_result = repo_service.prepare_indexing(repo_url)
 
         current_status = initial_status_result.get("status")
         repo_name_from_result = initial_status_result.get(
@@ -49,18 +42,12 @@ def index_repository():
         )
 
         if current_status == "indexing" or current_status == "pending":
-            # 이미 처리 중이거나, 이제 막 시작된 경우 (중복 요청 포함)
-
-            # 실제 인덱싱 작업을 백그라운드 스레드에서 실행
-            # (주의: 이 방식은 간단하지만, 운영 환경에서는 작업 큐 사용 권장)
-            # (또한, prepare_indexing이 실제 작업을 시작하지 않고 상태만 설정해야 함)
-            if initial_status_result.get(
-                "is_new_request", False
-            ):  # 새 요청인 경우에만 스레드 시작
+            # 새 요청인 경우 백그라운드 스레드에서 실제 인덱싱 작업 실행
+            if initial_status_result.get("is_new_request", False):
                 thread = threading.Thread(
                     target=repo_service.perform_indexing, args=(repo_url,)
                 )
-                thread.daemon = True  # 메인 스레드 종료 시 함께 종료
+                thread.daemon = True
                 thread.start()
 
             return success_response(
@@ -69,15 +56,13 @@ def index_repository():
                 status_code=202,  # Accepted
             )
         elif current_status == "completed":
-            # 이미 완료된 경우 (이 경우는 prepare_indexing에서 바로 완료 상태를 반환했을 때)
             return success_response(
                 data=initial_status_result,
                 message=f"저장소 '{repo_name_from_result}'은(는) 이미 성공적으로 인덱싱되었습니다.",
                 status_code=200,
             )
-
-        # 위의 prepare_indexing이 실패 상태를 반환하는 경우는 현재 로직에 없음.
-        # 실패는 perform_indexing 내부에서 처리되고 상태가 업데이트됨.
+        # prepare_indexing이 실패 상태를 직접 반환하지 않으므로, 추가적인 else/elif는 불필요.
+        # 실패는 perform_indexing 내부에서 상태 업데이트로 처리됨.
 
     except ValidationError as e:
         logger.warning(f"입력 값 검증 오류: {e}")
@@ -146,8 +131,6 @@ def search_repository():
 def get_repository_status(repo_name):
     """저장소 인덱싱 상태 확인 API"""
     try:
-        # repo_name이 URL 인코딩되어 올 수 있으므로 디코딩 (Flask가 자동으로 처리해줄 수 있음)
-        # 여기서는 repo_name을 그대로 사용한다고 가정
         status_data = repo_service.get_repository_status(repo_name)
 
         if status_data.get("status") == "not_indexed":
