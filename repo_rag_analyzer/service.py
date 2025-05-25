@@ -36,6 +36,15 @@ class RepositoryService:
         """저장소 로컬 경로 반환"""
         return os.path.join(Config.BASE_CLONED_DIR, repo_name)
 
+    def _get_index_path(self, repo_name: str, index_type: str) -> str:
+        """주어진 저장소 이름과 인덱스 타입에 대한 FAISS 인덱스 경로를 반환합니다."""
+        if index_type == "code":
+            return os.path.join(Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code")
+        elif index_type == "document":
+            return os.path.join(Config.FAISS_INDEX_DOCS_DIR, f"{repo_name}_docs")
+        else:
+            raise ValueError(f"알 수 없는 인덱스 타입입니다: {index_type}")
+
     def index_repository(self, repo_url):
         """저장소 인덱싱 서비스 로직. 비동기 시작 또는 동기 완료 결과를 반환."""
         repo_name = self._get_repo_name_from_url(repo_url)
@@ -153,14 +162,7 @@ class RepositoryService:
             )
 
             # 인덱스 경로 설정
-            if search_type == "code":
-                index_path = os.path.join(
-                    Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code"
-                )
-            else:
-                index_path = os.path.join(
-                    Config.FAISS_INDEX_DOCS_DIR, f"{repo_name}_docs"
-                )
+            index_path = self._get_index_path(repo_name, search_type)  # 헬퍼 함수 사용
 
             vector_store = load_faiss_index(index_path, embeddings, search_type)
 
@@ -206,12 +208,11 @@ class RepositoryService:
         if repo_name not in self.repository_status:
             # 메모리에 상태 정보가 없는 경우 (예: 서버 재시작)
             # 디스크의 인덱스 파일 존재 여부로 간이 상태 추론
-            code_index_path = os.path.join(
-                Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code"
-            )
-            doc_index_path = os.path.join(
-                Config.FAISS_INDEX_DOCS_DIR, f"{repo_name}_docs"
-            )
+            code_index_path = self._get_index_path(repo_name, "code")  # 헬퍼 함수 사용
+            doc_index_path = self._get_index_path(
+                repo_name, "document"
+            )  # 헬퍼 함수 사용
+
             code_exists = os.path.exists(code_index_path)
             doc_exists = os.path.exists(doc_index_path)
 
@@ -271,9 +272,5 @@ class RepositoryService:
 
     def _check_index_exists(self, repo_name, index_type):
         """인덱스 파일 존재 여부 확인"""
-        if index_type == "code":
-            index_path = os.path.join(Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code")
-        else:
-            index_path = os.path.join(Config.FAISS_INDEX_DOCS_DIR, f"{repo_name}_docs")
-
+        index_path = self._get_index_path(repo_name, index_type)  # 헬퍼 함수 사용
         return os.path.exists(index_path)
