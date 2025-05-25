@@ -1,0 +1,33 @@
+from flask import Flask
+import logging
+
+from api.repository import repository_bp
+from config import Config
+
+
+def create_app():
+    """Flask 앱 팩토리"""
+    app = Flask(__name__)
+
+    # 로깅 설정
+    logging.basicConfig(
+        level=getattr(logging, Config.LOG_LEVEL), format=Config.LOG_FORMAT
+    )
+
+    # Blueprint 등록
+    app.register_blueprint(repository_bp, url_prefix="/api")
+
+    @app.route("/")
+    def home():
+        return {
+            "service": "AIssue Repository RAG 분석 서비스",
+            "version": Config.API_VERSION,
+            "status": "running",
+        }
+
+    return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(debug=True, port=3002)
