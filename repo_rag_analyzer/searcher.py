@@ -1,8 +1,6 @@
 import logging
-from typing import Dict, Optional
 
 import google.generativeai as genai
-from langchain_community.vectorstores import FAISS
 
 # FAISS CPU 전용 설정 (GPU 경고 방지)
 import faiss
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 
 
-def translate_code_query_to_english(korean_text: str, llm_model_name: str) -> str:
+def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
     try:
         llm = genai.GenerativeModel(llm_model_name)
@@ -40,7 +38,7 @@ def translate_code_query_to_english(korean_text: str, llm_model_name: str) -> st
         return korean_text
 
 
-def translate_to_english(korean_text: str, llm_model_name: str) -> str:
+def translate_to_english(korean_text, llm_model_name):
     """일반 한국어 텍스트 영어 번역"""
     try:
         llm = genai.GenerativeModel(llm_model_name)
@@ -62,13 +60,13 @@ def translate_to_english(korean_text: str, llm_model_name: str) -> str:
 
 
 def search_and_rag(
-    vector_stores: Dict[str, Optional[FAISS]],
-    target_index: str,  # "code" 또는 "document"
-    search_query: str,
-    llm_model_name: str,
-    top_k: int = Config.DEFAULT_TOP_K,
-    similarity_threshold: float = Config.DEFAULT_SIMILARITY_THRESHOLD,
-) -> Optional[str]:
+    vector_stores,
+    target_index,  # "code" 또는 "document"
+    search_query,
+    llm_model_name,
+    top_k=Config.DEFAULT_TOP_K,
+    similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
+):
     """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(

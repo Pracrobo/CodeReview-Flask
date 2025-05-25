@@ -1,11 +1,10 @@
 """요청 데이터 검증 유틸리티 모듈"""
 
 import re
-from typing import Tuple, Optional, Dict, Any
 from .exceptions import ValidationError
 
 
-def validate_repo_url(data: Optional[Dict[str, Any]]) -> str:
+def validate_repo_url(data):
     """저장소 URL 유효성 검증"""
     if not data or "repo_url" not in data:
         raise ValidationError("repo_url이 필요합니다.")
@@ -28,7 +27,7 @@ def validate_repo_url(data: Optional[Dict[str, Any]]) -> str:
     return repo_url
 
 
-def validate_search_request(data: Optional[Dict[str, Any]]) -> Tuple[str, str, str]:
+def validate_search_request(data):
     """검색 요청 데이터 유효성 검증"""
     if not data:
         raise ValidationError("요청 데이터가 필요합니다.")

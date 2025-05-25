@@ -1,7 +1,6 @@
 import logging
 import time
 import traceback
-from typing import List, Tuple
 
 import google.generativeai as genai
 from langchain_core.embeddings import Embeddings
@@ -19,9 +18,9 @@ class GeminiAPIEmbeddings(Embeddings):
 
     def __init__(
         self,
-        model_name: str,
-        document_task_type: str = "RETRIEVAL_DOCUMENT",  # 문서 임베딩용
-        query_task_type: str = "RETRIEVAL_QUERY",  # 검색 쿼리 임베딩용
+        model_name,
+        document_task_type="RETRIEVAL_DOCUMENT",  # 문서 임베딩용
+        query_task_type="RETRIEVAL_QUERY",  # 검색 쿼리 임베딩용
     ):
         self.model_name = model_name
         self.document_task_type = document_task_type
@@ -29,7 +28,7 @@ class GeminiAPIEmbeddings(Embeddings):
         self.max_retries = Config.MAX_RETRIES
         genai.configure(api_key=Config.GEMINI_API_KEY)  # API 키 설정
 
-    def _calculate_sleep_time(self, is_quota_error: bool) -> float:
+    def _calculate_sleep_time(self, is_quota_error):
         """오류 유형별 API 재시도 대기 시간 계산"""
         if is_quota_error:
             logger.warning(
@@ -42,10 +41,10 @@ class GeminiAPIEmbeddings(Embeddings):
             )
             return Config.GENERAL_API_ERROR_SLEEP_TIME
 
-    def embed_documents(self, texts: List[str]) -> Tuple[List[List[float]], List[int]]:
+    def embed_documents(self, texts):
         """다수 문서 임베딩 (성공 임베딩, 실패 원본 인덱스 반환)"""
-        successful_embeddings: List[List[float]] = []
-        failed_original_indices: List[int] = []
+        successful_embeddings = []
+        failed_original_indices = []
 
         successful_count = 0
         failed_count = 0
@@ -117,10 +116,6 @@ class GeminiAPIEmbeddings(Embeddings):
                     )
                 failed_count += len(batch_texts)
 
-            # (선택) API 할당량 관리용 짧은 대기
-            # if j_idx + batch_size < len(texts):
-            # time.sleep(Config.GENERAL_API_ERROR_SLEEP_TIME / 10) # 예시: 일반 오류 대기 시간의 1/10
-
         logger.info(
             f"임베딩 처리 완료. 총 시도 문서: {len(texts)}, "
             f"성공: {successful_count}, 실패: {failed_count} (실패 인덱스 수: {len(failed_original_indices)})"
@@ -132,7 +127,7 @@ class GeminiAPIEmbeddings(Embeddings):
         # 반환: 성공 임베딩 리스트, 실패 문서 원본 인덱스 리스트
         return successful_embeddings, sorted(list(set(failed_original_indices)))
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text):
         """단일 쿼리 임베딩 생성"""
         retries_count = 0
         logger.info(f"쿼리 임베딩 중 (Task: {self.query_task_type})...")

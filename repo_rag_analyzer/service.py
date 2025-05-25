@@ -1,6 +1,5 @@
 import os
 import logging
-from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 from config import Config
@@ -27,27 +26,36 @@ class RepositoryService:
 
     def __init__(self):
         # 저장소 상태 (메모리, 운영 시 DB 권장)
-        self.repository_status: Dict[str, Dict[str, Any]] = {}
+        self.repository_status = {}
 
-    def _get_repo_name_from_url(self, repo_url: str) -> str:
+    def _get_repo_name_from_url(self, repo_url):
         """URL에서 저장소 이름 추출"""
         return repo_url.split("/")[-1].removesuffix(".git")
 
-    def _get_local_repo_path(self, repo_name: str) -> str:
+    def _get_local_repo_path(self, repo_name):
         """저장소 로컬 경로 반환"""
         return os.path.join(Config.BASE_CLONED_DIR, repo_name)
 
-    def index_repository(self, repo_url: str) -> Dict[str, Any]:
+    def index_repository(self, repo_url):
         """저장소 인덱싱 서비스 로직. 비동기 시작 또는 동기 완료 결과를 반환."""
         repo_name = self._get_repo_name_from_url(repo_url)
         local_repo_path = self._get_local_repo_path(repo_name)
 
-        # 이미 진행 중이거나 완료된 경우 처리 (선택적: 여기서는 매번 새로 시작한다고 가정)
-        # if repo_name in self.repository_status and self.repository_status[repo_name]["status"] == "indexing":
-        #     raise ServiceError(f"저장소 '{repo_name}'은 이미 인덱싱 중입니다.", error_code="ALREADY_INDEXING")
-        # if repo_name in self.repository_status and self.repository_status[repo_name]["status"] == "completed":
-        #     # 필요하다면 재인덱싱 로직 또는 현재 상태 반환
-        #     pass
+        # 중복 인덱싱 방지 로직
+        if repo_name in self.repository_status:
+            current_status = self.repository_status[repo_name].get("status")
+            if current_status == "indexing" or current_status == "pending":
+                logger.info(f"저장소 '{repo_name}'은 이미 인덱싱 중이거나 대기 중입니다.")
+                # 현재 진행 상태를 반환하여 클라이언트가 혼동하지 않도록 함
+                return self.repository_status[repo_name]
+            elif current_status == "completed":
+                logger.info(f"저장소 '{repo_name}'은 이미 성공적으로 인덱싱되었습니다. 재인덱싱을 원하시면 기존 인덱스를 삭제 후 시도해주세요.")
+                # 이미 완료된 상태 정보 반환
+                return self.repository_status[repo_name]
+            elif current_status == "failed":
+                logger.info(f"저장소 '{repo_name}'은 이전에 인덱싱에 실패했습니다. 재시도합니다.")
+                # 실패한 경우, 새로 인덱싱 시도 (아래 로직으로 계속 진행)
+
 
         # 상태 초기화 또는 업데이트
         current_time_iso = datetime.now(timezone.utc).isoformat()
@@ -129,9 +137,7 @@ class RepositoryService:
             logger.error(f"인덱싱 중 예상치 못한 오류 ({repo_url}): {e}", exc_info=True)
             raise ServiceError(error_msg, error_code="UNEXPECTED_INDEXING_ERROR") from e
 
-    def search_repository(
-        self, repo_url: str, query: str, search_type: str = "code"
-    ) -> Dict[str, Any]:
+    def search_repository(self, repo_url, query, search_type="code"):
         """저장소 검색 서비스 로직"""
         repo_name = self._get_repo_name_from_url(repo_url)
 
@@ -185,7 +191,7 @@ class RepositoryService:
                 "query": query,
                 "search_type": search_type,
                 "answer": rag_response,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now().isoformat(),  # UTC 시간으로 변경하려면 datetime.now(timezone.utc).isoformat()
             }
 
         except RAGError as e:
@@ -194,10 +200,10 @@ class RepositoryService:
             raise ServiceError(error_msg) from e
         except Exception as e:
             error_msg = f"검색 중 예상치 못한 오류: {str(e)}"
-            logger.error(error_msg)
-            raise ServiceError(error_msg) from e
+            logger.error(error_msg, exc_info=True)  # exc_info=True 추가
+            raise ServiceError(error_msg, error_code="UNEXPECTED_SEARCH_ERROR") from e
 
-    def get_repository_status(self, repo_name: str) -> Dict[str, Any]:
+    def get_repository_status(self, repo_name):
         """저장소 상태 조회 서비스 로직. repo_name은 URL에서 추출된 순수 이름이어야 함."""
         # repo_name 정규화 (예: '.git' 제거, 소문자 변환 등) - 이미 _get_repo_name_from_url 에서 처리됨
 
@@ -241,9 +247,7 @@ class RepositoryService:
         ).isoformat()
         return self.repository_status[repo_name]
 
-    def _update_error_status(
-        self, repo_name: str, error_msg: str, error_code: Optional[str] = None
-    ):
+    def _update_error_status(self, repo_name, error_msg, error_code=None):
         """오류 상태를 업데이트합니다."""
         if repo_name in self.repository_status:
             current_time_iso = datetime.now(timezone.utc).isoformat()
@@ -273,7 +277,7 @@ class RepositoryService:
                 }
             )
 
-    def _check_index_exists(self, repo_name: str, index_type: str) -> bool:
+    def _check_index_exists(self, repo_name, index_type):
         """인덱스 파일 존재 여부 확인"""
         if index_type == "code":
             index_path = os.path.join(Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code")

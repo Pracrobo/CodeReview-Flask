@@ -2,7 +2,6 @@ import os
 import time
 import logging
 import shutil
-from typing import Dict, List, Optional, Tuple
 
 import requests
 from git import Repo, GitCommandError
@@ -30,9 +29,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 
 
-def get_repo_primary_language(
-    repo_url: str, token: Optional[str] = None
-) -> Tuple[str, int]:
+def get_repo_primary_language(repo_url, token=None):
     """GitHub API로 저장소 주 사용 언어 및 크기 조회"""
     try:
         if not repo_url.startswith("https://github.com/"):
@@ -91,7 +88,7 @@ def get_repo_primary_language(
         ) from e
 
 
-def clone_repo(repo_url: str, local_path: str) -> Repo:
+def clone_repo(repo_url, local_path):
     """Git 저장소 복제 또는 로드"""
     if os.path.exists(local_path):
         logger.info(f"기존 저장소를 {local_path} 에서 로드합니다.")
@@ -108,9 +105,7 @@ def clone_repo(repo_url: str, local_path: str) -> Repo:
         raise RepositoryError(f"저장소 복제 실패: {e}") from e
 
 
-def load_documents_from_path(
-    path: str, file_extensions: Tuple[str, ...], encoding: str = "utf-8"
-) -> List[Document]:
+def load_documents_from_path(path, file_extensions, encoding="utf-8"):
     """경로에서 특정 확장자 파일 로드 (Document 객체 리스트)"""
     docs = []
     for root, _, files in os.walk(path):
@@ -132,11 +127,11 @@ def load_documents_from_path(
 
 
 def create_faiss_index(
-    docs: List[Document],
-    embeddings: GeminiAPIEmbeddings,
-    index_path: str,
-    index_type: str,  # "code" 또는 "document"
-) -> Optional[FAISS]:
+    docs,
+    embeddings,
+    index_path,
+    index_type,  # "code" 또는 "document"
+):
     """문서와 임베딩 모델로 FAISS 인덱스 생성/저장 (실패 문서 제외)"""
     if not docs:
         logger.warning(
@@ -167,7 +162,7 @@ def create_faiss_index(
         return None
 
     # 3. 성공한 문서와 메타데이터만 필터링
-    successful_docs_for_faiss: List[Document] = []
+    successful_docs_for_faiss = []
     if successful_raw_embeddings:
         current_successful_idx = 0
         for i in range(len(docs)):
@@ -257,9 +252,7 @@ def create_faiss_index(
         raise IndexingError(f"{index_type} 인덱스 생성 실패") from e
 
 
-def load_faiss_index(
-    index_path: str, embeddings: GeminiAPIEmbeddings, index_type: str
-) -> Optional[FAISS]:
+def load_faiss_index(index_path, embeddings, index_type):
     """저장된 FAISS 인덱스 로드"""
     if os.path.exists(index_path):
         logger.info(f"기존 {index_type} FAISS 인덱스를 {index_path} 에서 로드합니다...")
@@ -276,13 +269,13 @@ def load_faiss_index(
 
 
 def create_index_from_repo(
-    repo_url: str,
-    local_repo_path: str,
-    embedding_model_name: str,
-) -> Dict[str, Optional[FAISS]]:
+    repo_url,
+    local_repo_path,
+    embedding_model_name,
+):
     """저장소 URL로부터 코드/문서 FAISS 인덱스 생성"""
     overall_start_time = time.time()
-    vector_stores: Dict[str, Optional[FAISS]] = {"code": None, "document": None}
+    vector_stores = {"code": None, "document": None}
 
     try:
         # 저장소 복제 전에 주 사용 언어와 크기 검증
@@ -413,7 +406,7 @@ def create_index_from_repo(
         return vector_stores
 
 
-def format_time(seconds: float) -> str:
+def format_time(seconds):
     """초를 'X분 Y초' 또는 'Y초' 형식으로 변환"""
     minutes = int(seconds // 60)
     remaining_seconds = int(seconds % 60)

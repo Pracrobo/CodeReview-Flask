@@ -39,16 +39,33 @@ def index_repository():
         result = repo_service.index_repository(repo_url)
 
         # 서비스 레이어에서 반환된 상태에 따라 응답 분기
-        if result.get("status") == "indexing":  # 비동기 시작을 알리는 경우
+        current_status = result.get("status")
+        if current_status == "indexing" or current_status == "pending":
             return success_response(
                 data=result,
-                message="저장소 인덱싱이 시작되었습니다. 상태 API를 통해 진행 상황을 확인하세요.",
-                status_code=202,  # Accepted
+                message=f"저장소 '{result.get('repo_name')}' 인덱싱이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요.",
+                status_code=202,  # Accepted 또는 200 OK (이미 작업 인지)
             )
+        elif current_status == "completed" and result.get("end_time"): # end_time 존재 여부로 최초 완료인지, 기존 완료 상태 반환인지 구분 가능
+             # 이전에 완료된 경우, 메시지를 다르게 할 수 있음
+            is_initial_request_completion = not request.headers.get("If-None-Match") # 간단한 예시, 실제로는 더 정교한 방법 사용
+            if result.get("start_time") == result.get("last_updated_time"): # 매우 단순한 최초 완료 판단 예시
+                 message = "저장소 인덱싱이 완료되었습니다."
+            else:
+                 message = f"저장소 '{result.get('repo_name')}'은(는) 이전에 성공적으로 인덱싱되었습니다."
 
+            return success_response(
+                data=result,
+                message=message,
+                status_code=200, # OK
+            )
+        # 실패 후 재시도하여 성공한 경우 (위의 completed 로직에 포함될 수 있음)
+        # 또는, 서비스에서 명시적으로 "reprocessing_completed" 같은 상태를 준다면 분기
+
+        # 기본적으로 성공(새로 시작하여 완료)으로 간주
         return success_response(
             data=result,
-            message="저장소 인덱싱이 완료되었습니다.",
+            message="저장소 인덱싱이 완료되었습니다.", # 이 메시지는 result.status가 completed일 때 사용됨
         )
 
     except ValidationError as e:

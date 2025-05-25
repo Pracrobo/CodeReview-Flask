@@ -34,7 +34,7 @@ class RAGError(Exception):
 class ServiceError(Exception):
     """서비스 레벨 오류를 위한 사용자 정의 예외 클래스"""
 
-    def __init__(self, message: str, error_code: str = None):
+    def __init__(self, message, error_code=None):
         super().__init__(message)
         self.error_code = error_code
 
