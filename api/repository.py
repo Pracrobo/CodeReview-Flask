@@ -1,8 +1,13 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 import logging
 
 from repo_rag_analyzer.service import RepositoryService
-from common.exceptions import ServiceError
+from common.exceptions import ServiceError, ValidationError
+from common.response_utils import success_response, error_response  # 새로운 import
+from common.validators import (
+    validate_repo_url,
+    validate_search_request,
+)  # validator import 추가
 
 # Blueprint 생성
 repository_bp = Blueprint("repository", __name__)
@@ -18,66 +23,51 @@ repo_service = RepositoryService()
 def index_repository():
     """저장소 인덱싱 API"""
     try:
-        # Content-Type 검증
         if not request.is_json:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Content-Type이 application/json이어야 합니다.",
-                    }
-                ),
-                400,
+            return error_response(
+                message="Content-Type이 application/json이어야 합니다.",
+                error_code="INVALID_CONTENT_TYPE",
+                status_code=400,
             )
+        data = request.get_json(
+            force=True
+        )  # force=True는 Content-Type이 application/json이 아니어도 파싱 시도. 위에서 이미 검증했으므로 get_json()으로 변경 가능
 
-        # JSON 데이터 파싱
-        try:
-            data = request.get_json(force=True)
-        except Exception as json_error:
-            return (
-                jsonify(
-                    {"status": "error", "message": f"JSON 파싱 오류: {str(json_error)}"}
-                ),
-                400,
-            )
-
-        if not data or "repo_url" not in data:
-            return (
-                jsonify({"status": "error", "message": "repo_url이 필요합니다."}),
-                400,
-            )
-
-        repo_url = str(data["repo_url"]).strip()
-        if not repo_url:
-            return (
-                jsonify(
-                    {"status": "error", "message": "유효한 repo_url을 입력해주세요."}
-                ),
-                400,
-            )
+        repo_url = validate_repo_url(data)  # 검증 함수 사용
 
         # 저장소 인덱싱 실행
         result = repo_service.index_repository(repo_url)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": "저장소 인덱싱이 완료되었습니다.",
-                    "data": result,
-                }
-            ),
-            200,
+        # 서비스 레이어에서 반환된 상태에 따라 응답 분기
+        if result.get("status") == "indexing":  # 비동기 시작을 알리는 경우
+            return success_response(
+                data=result,
+                message="저장소 인덱싱이 시작되었습니다. 상태 API를 통해 진행 상황을 확인하세요.",
+                status_code=202,  # Accepted
+            )
+
+        return success_response(
+            data=result,
+            message="저장소 인덱싱이 완료되었습니다.",
         )
 
+    except ValidationError as e:
+        logger.warning(f"입력 값 검증 오류: {e}")
+        return error_response(
+            message=str(e), error_code="VALIDATION_ERROR", status_code=400
+        )
     except ServiceError as e:
         logger.error(f"서비스 오류: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 400
+        # ServiceError에서 error_code를 포함하도록 수정 필요 (선택 사항)
+        return error_response(
+            message=str(e), error_code="SERVICE_ERROR", status_code=400
+        )
     except Exception as e:
-        logger.error(f"예상치 못한 오류: {e}")
-        return (
-            jsonify({"status": "error", "message": "서버 내부 오류가 발생했습니다."}),
-            500,
+        logger.error(f"예상치 못한 오류: {e}", exc_info=True)
+        return error_response(
+            message="서버 내부 오류가 발생했습니다.",
+            error_code="INTERNAL_SERVER_ERROR",
+            status_code=500,
         )
 
 
@@ -85,88 +75,85 @@ def index_repository():
 def search_repository():
     """저장소 검색 API"""
     try:
-        # Content-Type 검증
         if not request.is_json:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Content-Type이 application/json이어야 합니다.",
-                    }
-                ),
-                400,
+            return error_response(
+                message="Content-Type이 application/json이어야 합니다.",
+                error_code="INVALID_CONTENT_TYPE",
+                status_code=400,
             )
+        data = request.get_json()
 
-        # JSON 데이터 파싱
-        try:
-            data = request.get_json(force=True)
-        except Exception as json_error:
-            return (
-                jsonify(
-                    {"status": "error", "message": f"JSON 파싱 오류: {str(json_error)}"}
-                ),
-                400,
-            )
-
-        if not data or "repo_url" not in data or "query" not in data:
-            return (
-                jsonify(
-                    {"status": "error", "message": "repo_url과 query가 필요합니다."}
-                ),
-                400,
-            )
-
-        repo_url = str(data["repo_url"]).strip()
-        query = str(data["query"]).strip()
-        search_type = str(data.get("search_type", "code")).strip()  # 기본값: code
-
-        if not repo_url or not query:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "유효한 repo_url과 query를 입력해주세요.",
-                    }
-                ),
-                400,
-            )
+        repo_url, query, search_type = validate_search_request(data)  # 검증 함수 사용
 
         # 검색 실행
         result = repo_service.search_repository(repo_url, query, search_type)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": "검색이 완료되었습니다.",
-                    "data": result,
-                }
-            ),
-            200,
+        return success_response(
+            data=result,
+            message="검색이 완료되었습니다.",
         )
 
+    except ValidationError as e:
+        logger.warning(f"입력 값 검증 오류: {e}")
+        return error_response(
+            message=str(e), error_code="VALIDATION_ERROR", status_code=400
+        )
     except ServiceError as e:
         logger.error(f"서비스 오류: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return error_response(
+            message=str(e), error_code="SERVICE_ERROR", status_code=400
+        )
     except Exception as e:
-        logger.error(f"예상치 못한 오류: {e}")
-        return (
-            jsonify({"status": "error", "message": "서버 내부 오류가 발생했습니다."}),
-            500,
+        logger.error(f"예상치 못한 오류: {e}", exc_info=True)
+        return error_response(
+            message="서버 내부 오류가 발생했습니다.",
+            error_code="INTERNAL_SERVER_ERROR",
+            status_code=500,
         )
 
 
-@repository_bp.route("/repository/status/<repo_name>", methods=["GET"])
+@repository_bp.route(
+    "/repository/status/<path:repo_name>", methods=["GET"]
+)  # repo_name에 URL 경로가 포함될 수 있으므로 path 사용
 def get_repository_status(repo_name):
     """저장소 인덱싱 상태 확인 API"""
     try:
-        status = repo_service.get_repository_status(repo_name)
-        return jsonify({"status": "success", "data": status}), 200
+        # repo_name이 URL 인코딩되어 올 수 있으므로 디코딩 (Flask가 자동으로 처리해줄 수 있음)
+        # 여기서는 repo_name을 그대로 사용한다고 가정
+        status_data = repo_service.get_repository_status(repo_name)
+
+        if status_data.get("status") == "not_indexed":
+            return error_response(
+                message=f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.",
+                error_code="NOT_FOUND",
+                status_code=404,  # Not Found
+            )
+        if (
+            status_data.get("status") == "indexing"
+            or status_data.get("status") == "pending"
+        ):  # 'pending' 상태 추가 고려
+            return success_response(  # 202 대신 200으로 성공 상태를 알리고, data에 진행상황 포함
+                data=status_data,
+                message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.",
+                status_code=200,  # OK, 하지만 내용은 진행 중
+            )
+        if status_data.get("status") == "failed":
+            return error_response(
+                message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data.get('error', '알 수 없는 오류')}",
+                error_code="INDEXING_FAILED",
+                status_code=200,  # 상태는 가져왔으므로 200, 내용은 실패
+            )
+
+        return success_response(data=status_data)
+    except ServiceError as e:  # 서비스 로직 내에서 발생할 수 있는 예상된 오류
+        logger.error(f"상태 조회 서비스 오류: {e}")
+        return error_response(
+            message=str(e), error_code="SERVICE_ERROR", status_code=400
+        )
     except Exception as e:
-        logger.error(f"상태 조회 오류: {e}")
-        return (
-            jsonify(
-                {"status": "error", "message": "상태 조회 중 오류가 발생했습니다."}
-            ),
-            500,
+        logger.error(f"상태 조회 중 예상치 못한 오류: {e}", exc_info=True)
+        return error_response(
+            message="상태 조회 중 서버 내부 오류가 발생했습니다.",
+            error_code="INTERNAL_SERVER_ERROR",
+            status_code=500,
         )
