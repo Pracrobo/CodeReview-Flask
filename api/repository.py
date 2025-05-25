@@ -4,7 +4,11 @@ import threading  # 스레딩 임포트
 
 from repo_rag_analyzer.service import RepositoryService
 from common.exceptions import ServiceError, ValidationError
-from common.response_utils import success_response, error_response  # 새로운 import
+from common.response_utils import (
+    success_response,
+    error_response,
+    in_progress_response,
+)
 from common.validators import (
     validate_repo_url,
     validate_search_request,
@@ -42,7 +46,6 @@ def index_repository():
         )
 
         if current_status == "indexing" or current_status == "pending":
-            # 새 요청인 경우 백그라운드 스레드에서 실제 인덱싱 작업 실행
             if initial_status_result.get("is_new_request", False):
                 thread = threading.Thread(
                     target=repo_service.perform_indexing, args=(repo_url,)
@@ -50,8 +53,9 @@ def index_repository():
                 thread.daemon = True
                 thread.start()
 
-            return success_response(
-                data=initial_status_result,
+            # 진행 중 응답으로 변경
+            return in_progress_response(
+                progress_data=initial_status_result,
                 message=f"저장소 '{repo_name_from_result}' 인덱싱 작업이 시작되었거나 이미 진행 중입니다. 상태 API로 확인하세요.",
                 status_code=202,  # Accepted
             )
@@ -142,11 +146,12 @@ def get_repository_status(repo_name):
         if (
             status_data.get("status") == "indexing"
             or status_data.get("status") == "pending"
-        ):  # 'pending' 상태 추가 고려
-            return success_response(  # 202 대신 200으로 성공 상태를 알리고, data에 진행상황 포함
-                data=status_data,
+        ):
+            # 진행 중 응답으로 변경
+            return in_progress_response(
+                progress_data=status_data,
                 message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.",
-                status_code=200,  # OK, 하지만 내용은 진행 중
+                status_code=202,  # Accepted, 진행 상황을 progress_data에 포함
             )
         if status_data.get("status") == "failed":
             return error_response(

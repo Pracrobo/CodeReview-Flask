@@ -131,8 +131,8 @@ curl -X POST http://localhost:3002/api/repository/search ^
 
 ### 3. 저장소 인덱싱 상태 확인
 
-특정 저장소의 현재 인덱싱 상태를 확인합니다. `repo_name`은 URL에서 추출된 순수
-저장소 이름입니다.
+특정 저장소의 현재 인덱싱 상태를 확인합니다. `repo_name`은 URL에서 추출된 순수 저장소
+이름입니다.
 
 ```bash
 curl -X GET http://localhost:3002/api/repository/status/flask
