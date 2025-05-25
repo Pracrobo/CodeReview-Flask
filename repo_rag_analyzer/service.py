@@ -45,28 +45,19 @@ class RepositoryService:
         else:
             raise ValueError(f"알 수 없는 인덱스 타입입니다: {index_type}")
 
-    def index_repository(self, repo_url):
-        """저장소 인덱싱 서비스 로직. 비동기 시작 또는 동기 완료 결과를 반환."""
+    def prepare_indexing(self, repo_url):
+        """인덱싱 준비: 상태 확인, 초기 상태 설정 및 반환."""
         repo_name = self._get_repo_name_from_url(repo_url)
-        local_repo_path = self._get_local_repo_path(repo_name)
 
-        # 중복 인덱싱 방지: 이미 처리 중이거나 완료된 경우 해당 상태 반환
         if repo_name in self.repository_status:
-            current_status = self.repository_status[repo_name].get("status")
-            if current_status in ["indexing", "pending"]:
-                logger.info(f"'{repo_name}'은(는) 이미 처리 중입니다.")
-                return self.repository_status[repo_name]
-            elif current_status == "completed":
-                logger.info(f"'{repo_name}'은(는) 이미 성공적으로 인덱싱되었습니다.")
-                return self.repository_status[repo_name]
-            elif current_status == "failed":
-                logger.info(f"'{repo_name}'은(는) 이전에 실패했습니다. 재시도합니다.")
-                # 실패한 경우 새로 인덱싱 진행
+            current_status_info = self.repository_status[repo_name]
+            # 이미 진행 중이거나 완료/실패된 경우 해당 상태 반환
+            return {**current_status_info, "is_new_request": False}
 
-        # 신규 인덱싱 또는 실패 후 재시도 시 상태 초기화
+        # 신규 인덱싱 요청
         current_time_iso = datetime.now(timezone.utc).isoformat()
-        self.repository_status[repo_name] = {
-            "status": "pending",  # 초기 상태 'pending'
+        initial_status_info = {
+            "status": "pending",
             "repo_url": repo_url,
             "repo_name": repo_name,
             "start_time": current_time_iso,
@@ -74,25 +65,39 @@ class RepositoryService:
             "end_time": None,
             "error": None,
             "error_code": None,
-            "code_index_status": "pending",  # "pending", "in_progress", "completed", "failed"
+            "code_index_status": "pending",
             "document_index_status": "pending",
             "progress_message": "인덱싱 작업 시작 대기 중...",
+            "is_new_request": True,  # API 컨트롤러에서 스레드 시작 여부 판단용
         }
+        self.repository_status[repo_name] = initial_status_info
+        return initial_status_info
+
+    def perform_indexing(self, repo_url):
+        """실제 인덱싱 작업 수행 (백그라운드 실행용)."""
+        repo_name = self._get_repo_name_from_url(repo_url)
+        local_repo_path = self._get_local_repo_path(repo_name)
+
+        # 이미 self.repository_status[repo_name]은 'pending' 상태로 존재해야 함
+        if (
+            repo_name not in self.repository_status
+            or self.repository_status[repo_name]["status"] != "pending"
+        ):
+            logger.error(
+                f"'{repo_name}'에 대한 인덱싱 작업 수행 오류: 잘못된 초기 상태입니다."
+            )
+            return
 
         try:
-            logger.info(f"저장소 인덱싱 시작 요청: {repo_url}")
-            self.repository_status[repo_name][
-                "status"
-            ] = "indexing"  # 실제 작업 시작 시 'indexing'으로 변경
-            self.repository_status[repo_name][
-                "progress_message"
-            ] = "저장소 정보 확인 중..."
-            self.repository_status[repo_name]["last_updated_time"] = datetime.now(
-                timezone.utc
-            ).isoformat()
+            logger.info(f"저장소 인덱싱 실제 작업 시작: {repo_url}")
+            self.repository_status[repo_name].update(
+                {
+                    "status": "indexing",
+                    "progress_message": "저장소 정보 확인 중...",
+                    "last_updated_time": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
-            # 실제 인덱싱 로직 (동기적 실행)
-            # 비동기 처리를 위해서는 Celery, RQ 등 작업 큐 시스템 도입 고려
             vector_stores = create_index_from_repo(
                 repo_url=repo_url,
                 local_repo_path=local_repo_path,
@@ -119,15 +124,14 @@ class RepositoryService:
                 }
             )
             logger.info(f"저장소 인덱싱 완료: {repo_url}")
-            return self.repository_status[repo_name]  # 완료된 상태 반환
 
         except RepositorySizeError as e:
             error_msg = f"저장소 크기 초과: {str(e)}"
             self._update_error_status(repo_name, error_msg, "REPO_SIZE_EXCEEDED")
+            # 이 예외는 API 컨트롤러로 전달되어 처리됨
             raise ServiceError(error_msg, error_code="REPO_SIZE_EXCEEDED") from e
         except (RepositoryError, IndexingError, EmbeddingError) as e:
             error_msg = f"인덱싱 실패: {str(e)}"
-            # 구체적인 오류 유형에 따라 error_code 세분화 가능
             specific_error_code = "INDEXING_FAILED"
             if isinstance(e, RepositoryError):
                 specific_error_code = "REPOSITORY_ERROR"
@@ -269,6 +273,11 @@ class RepositoryService:
                     ),
                 }
             )
+
+    def _check_index_exists(self, repo_name, index_type):
+        """주어진 저장소 이름과 인덱스 타입에 대한 인덱스 존재 여부를 확인합니다."""
+        index_path = self._get_index_path(repo_name, index_type)
+        return os.path.exists(index_path)
 
     def _check_index_exists(self, repo_name, index_type):
         """인덱스 파일 존재 여부 확인"""

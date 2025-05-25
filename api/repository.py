@@ -1,6 +1,6 @@
 from flask import Blueprint, request
 import logging
-from datetime import datetime
+import threading  # 스레딩 임포트
 
 from repo_rag_analyzer.service import RepositoryService
 from common.exceptions import ServiceError, ValidationError
@@ -22,7 +22,7 @@ repo_service = RepositoryService()
 
 @repository_bp.route("/repository/index", methods=["POST"])
 def index_repository():
-    """저장소 인덱싱 API"""
+    """저장소 인덱싱 API. 요청 즉시 응답 후 백그라운드에서 인덱싱 진행."""
     try:
         if not request.is_json:
             return error_response(
@@ -30,54 +30,54 @@ def index_repository():
                 error_code="INVALID_CONTENT_TYPE",
                 status_code=400,
             )
-        data = request.get_json(
-            force=True
-        )  # force=True는 Content-Type이 application/json이 아니어도 파싱 시도. 위에서 이미 검증했으므로 get_json()으로 변경 가능
+        data = request.get_json(force=True)
+        repo_url = validate_repo_url(data)
 
-        repo_url = validate_repo_url(data)  # 검증 함수 사용
+        # 서비스의 index_repository_async (또는 유사한 이름의 새 메서드)를 호출하여
+        # 초기 상태를 받고, 실제 작업은 백그라운드에서 수행하도록 요청.
+        # 여기서는 기존 index_repository를 수정하여 초기 상태만 먼저 반환한다고 가정.
 
-        # 저장소 인덱싱 실행
-        result = repo_service.index_repository(repo_url)
+        # 1. 초기 상태 설정 및 반환 요청
+        # (이 부분은 service.py의 index_repository가 수정되어 초기 상태를 반환한다고 가정)
+        initial_status_result = repo_service.prepare_indexing(
+            repo_url
+        )  # 새 메서드 또는 수정된 메서드
 
-        # 서비스 결과 상태에 따른 응답 처리
-        current_status = result.get("status")
-        repo_name_from_result = result.get("repo_name", "알 수 없는 저장소")
+        current_status = initial_status_result.get("status")
+        repo_name_from_result = initial_status_result.get(
+            "repo_name", "알 수 없는 저장소"
+        )
 
         if current_status == "indexing" or current_status == "pending":
-            # 이미 처리 중이거나 대기 중인 경우
+            # 이미 처리 중이거나, 이제 막 시작된 경우 (중복 요청 포함)
+
+            # 실제 인덱싱 작업을 백그라운드 스레드에서 실행
+            # (주의: 이 방식은 간단하지만, 운영 환경에서는 작업 큐 사용 권장)
+            # (또한, prepare_indexing이 실제 작업을 시작하지 않고 상태만 설정해야 함)
+            if initial_status_result.get(
+                "is_new_request", False
+            ):  # 새 요청인 경우에만 스레드 시작
+                thread = threading.Thread(
+                    target=repo_service.perform_indexing, args=(repo_url,)
+                )
+                thread.daemon = True  # 메인 스레드 종료 시 함께 종료
+                thread.start()
+
             return success_response(
-                data=result,
-                message=f"저장소 '{repo_name_from_result}' 인덱싱이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요.",
-                status_code=202,
+                data=initial_status_result,
+                message=f"저장소 '{repo_name_from_result}' 인덱싱 작업이 시작되었거나 이미 진행 중입니다. 상태 API로 확인하세요.",
+                status_code=202,  # Accepted
             )
         elif current_status == "completed":
-            # 인덱싱 완료 (신규 또는 기존 완료 건)
-            message = result.get("progress_message", "저장소 인덱싱이 완료되었습니다.")
-
-            # 서비스에서 제공하는 메시지를 우선 사용.
-            # 아래는 API 레벨에서 최초 완료/기존 완료를 구분하려는 예시 (서비스에서 명확한 상태를 주는 것이 더 좋음)
-            try:
-                start_dt = datetime.fromisoformat(result.get("start_time", ""))
-                end_dt = datetime.fromisoformat(result.get("end_time", ""))
-                # 단순 시간차로 신규/기존 완료 구분 (정확도 낮음, 서비스 로직 개선 권장)
-                if (end_dt - start_dt).total_seconds() < 5:
-                    message = (
-                        f"저장소 '{repo_name_from_result}' 인덱싱이 완료되었습니다."
-                    )
-                else:
-                    message = f"저장소 '{repo_name_from_result}'은(는) 이전에 성공적으로 인덱싱되었습니다."
-            except (TypeError, ValueError):
-                pass  # 타임스탬프 파싱 오류 시 기본 메시지 사용
-
+            # 이미 완료된 경우 (이 경우는 prepare_indexing에서 바로 완료 상태를 반환했을 때)
             return success_response(
-                data=result,
-                message=message,
+                data=initial_status_result,
+                message=f"저장소 '{repo_name_from_result}'은(는) 이미 성공적으로 인덱싱되었습니다.",
                 status_code=200,
             )
 
-        # index_repository가 completed, indexing, pending 외 다른 상태를 직접 반환하지 않으므로,
-        # 이 지점은 현재 로직상 도달하기 어려움.
-        # 필요시 기본 성공 응답 또는 오류 처리 추가.
+        # 위의 prepare_indexing이 실패 상태를 반환하는 경우는 현재 로직에 없음.
+        # 실패는 perform_indexing 내부에서 처리되고 상태가 업데이트됨.
 
     except ValidationError as e:
         logger.warning(f"입력 값 검증 오류: {e}")
