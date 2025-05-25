@@ -148,7 +148,6 @@ def create_faiss_index(
 
     # 1. 문서 내용만 추출
     doc_contents = [doc.page_content for doc in docs]
-    doc_metadatas = [doc.metadata for doc in docs]
 
     # 2. 임베딩 생성 (성공한 임베딩과 실패한 원본 인덱스 리스트 반환)
     # embed_documents는 (성공 임베딩, 실패 원본 인덱스) 반환
