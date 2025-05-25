@@ -1,5 +1,6 @@
 from flask import Blueprint, request
 import logging
+from datetime import datetime
 
 from repo_rag_analyzer.service import RepositoryService
 from common.exceptions import ServiceError, ValidationError
@@ -7,7 +8,7 @@ from common.response_utils import success_response, error_response  # 새로운 
 from common.validators import (
     validate_repo_url,
     validate_search_request,
-)  # validator import 추가
+)
 
 # Blueprint 생성
 repository_bp = Blueprint("repository", __name__)
@@ -38,41 +39,45 @@ def index_repository():
         # 저장소 인덱싱 실행
         result = repo_service.index_repository(repo_url)
 
-        # 서비스 레이어에서 반환된 상태에 따라 응답 분기
+        # 서비스 결과 상태에 따른 응답 처리
         current_status = result.get("status")
+        repo_name_from_result = result.get("repo_name", "알 수 없는 저장소")
+
         if current_status == "indexing" or current_status == "pending":
+            # 이미 처리 중이거나 대기 중인 경우
             return success_response(
                 data=result,
-                message=f"저장소 '{result.get('repo_name')}' 인덱싱이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요.",
-                status_code=202,  # Accepted 또는 200 OK (이미 작업 인지)
+                message=f"저장소 '{repo_name_from_result}' 인덱싱이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요.",
+                status_code=202,
             )
-        elif current_status == "completed" and result.get(
-            "end_time"
-        ):  # end_time 존재 여부로 최초 완료인지, 기존 완료 상태 반환인지 구분 가능
-            # 이전에 완료된 경우, 메시지를 다르게 할 수 있음
-            is_initial_request_completion = not request.headers.get(
-                "If-None-Match"
-            )  # 간단한 예시, 실제로는 더 정교한 방법 사용
-            if result.get("start_time") == result.get(
-                "last_updated_time"
-            ):  # 매우 단순한 최초 완료 판단 예시
-                message = "저장소 인덱싱이 완료되었습니다."
-            else:
-                message = f"저장소 '{result.get('repo_name')}'은(는) 이전에 성공적으로 인덱싱되었습니다."
+        elif current_status == "completed":
+            # 인덱싱 완료 (신규 또는 기존 완료 건)
+            message = result.get("progress_message", "저장소 인덱싱이 완료되었습니다.")
+
+            # 서비스에서 제공하는 메시지를 우선 사용.
+            # 아래는 API 레벨에서 최초 완료/기존 완료를 구분하려는 예시 (서비스에서 명확한 상태를 주는 것이 더 좋음)
+            try:
+                start_dt = datetime.fromisoformat(result.get("start_time", ""))
+                end_dt = datetime.fromisoformat(result.get("end_time", ""))
+                # 단순 시간차로 신규/기존 완료 구분 (정확도 낮음, 서비스 로직 개선 권장)
+                if (end_dt - start_dt).total_seconds() < 5:
+                    message = (
+                        f"저장소 '{repo_name_from_result}' 인덱싱이 완료되었습니다."
+                    )
+                else:
+                    message = f"저장소 '{repo_name_from_result}'은(는) 이전에 성공적으로 인덱싱되었습니다."
+            except (TypeError, ValueError):
+                pass  # 타임스탬프 파싱 오류 시 기본 메시지 사용
 
             return success_response(
                 data=result,
                 message=message,
-                status_code=200,  # OK
+                status_code=200,
             )
-        # 실패 후 재시도하여 성공한 경우 (위의 completed 로직에 포함될 수 있음)
-        # 또는, 서비스에서 명시적으로 "reprocessing_completed" 같은 상태를 준다면 분기
 
-        # 기본적으로 성공(새로 시작하여 완료)으로 간주
-        return success_response(
-            data=result,
-            message="저장소 인덱싱이 완료되었습니다.",  # 이 메시지는 result.status가 completed일 때 사용됨
-        )
+        # index_repository가 completed, indexing, pending 외 다른 상태를 직접 반환하지 않으므로,
+        # 이 지점은 현재 로직상 도달하기 어려움.
+        # 필요시 기본 성공 응답 또는 오류 처리 추가.
 
     except ValidationError as e:
         logger.warning(f"입력 값 검증 오류: {e}")

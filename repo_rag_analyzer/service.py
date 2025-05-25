@@ -15,7 +15,7 @@ from common.exceptions import (
     RepositorySizeError,
     EmbeddingError,
     RAGError,
-    ServiceError,  # 추가
+    ServiceError,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,31 +41,23 @@ class RepositoryService:
         repo_name = self._get_repo_name_from_url(repo_url)
         local_repo_path = self._get_local_repo_path(repo_name)
 
-        # 중복 인덱싱 방지 로직
+        # 중복 인덱싱 방지: 이미 처리 중이거나 완료된 경우 해당 상태 반환
         if repo_name in self.repository_status:
             current_status = self.repository_status[repo_name].get("status")
-            if current_status == "indexing" or current_status == "pending":
-                logger.info(
-                    f"저장소 '{repo_name}'은 이미 인덱싱 중이거나 대기 중입니다."
-                )
-                # 현재 진행 상태를 반환하여 클라이언트가 혼동하지 않도록 함
+            if current_status in ["indexing", "pending"]:
+                logger.info(f"'{repo_name}'은(는) 이미 처리 중입니다.")
                 return self.repository_status[repo_name]
             elif current_status == "completed":
-                logger.info(
-                    f"저장소 '{repo_name}'은 이미 성공적으로 인덱싱되었습니다. 재인덱싱을 원하시면 기존 인덱스를 삭제 후 시도해주세요."
-                )
-                # 이미 완료된 상태 정보 반환
+                logger.info(f"'{repo_name}'은(는) 이미 성공적으로 인덱싱되었습니다.")
                 return self.repository_status[repo_name]
             elif current_status == "failed":
-                logger.info(
-                    f"저장소 '{repo_name}'은 이전에 인덱싱에 실패했습니다. 재시도합니다."
-                )
-                # 실패한 경우, 새로 인덱싱 시도 (아래 로직으로 계속 진행)
+                logger.info(f"'{repo_name}'은(는) 이전에 실패했습니다. 재시도합니다.")
+                # 실패한 경우 새로 인덱싱 진행
 
-        # 상태 초기화 또는 업데이트
+        # 신규 인덱싱 또는 실패 후 재시도 시 상태 초기화
         current_time_iso = datetime.now(timezone.utc).isoformat()
         self.repository_status[repo_name] = {
-            "status": "indexing",  # 또는 "pending"으로 시작 후 실제 작업 시 "indexing"으로 변경
+            "status": "pending",  # 초기 상태 'pending'
             "repo_url": repo_url,
             "repo_name": repo_name,
             "start_time": current_time_iso,
@@ -80,12 +72,9 @@ class RepositoryService:
 
         try:
             logger.info(f"저장소 인덱싱 시작 요청: {repo_url}")
-
-            # 실제 인덱싱 작업은 백그라운드에서 실행된다고 가정하고, 여기서는 작업 시작을 알리는 응답을 즉시 반환.
-            # 실제 구현에서는 Celery, RQ 같은 작업 큐 사용 또는 ThreadPoolExecutor 등을 고려.
-            # 여기서는 동기적으로 실행하지만, API 응답은 비동기 시작처럼 처리.
-
-            # ---- 백그라운드 작업 시뮬레이션 시작 ----
+            self.repository_status[repo_name][
+                "status"
+            ] = "indexing"  # 실제 작업 시작 시 'indexing'으로 변경
             self.repository_status[repo_name][
                 "progress_message"
             ] = "저장소 정보 확인 중..."
@@ -93,12 +82,13 @@ class RepositoryService:
                 timezone.utc
             ).isoformat()
 
+            # 실제 인덱싱 로직 (동기적 실행)
+            # 비동기 처리를 위해서는 Celery, RQ 등 작업 큐 시스템 도입 고려
             vector_stores = create_index_from_repo(
                 repo_url=repo_url,
                 local_repo_path=local_repo_path,
                 embedding_model_name=Config.DEFAULT_EMBEDDING_MODEL,
             )
-            # ---- 백그라운드 작업 시뮬레이션 종료 ----
 
             completed_time_iso = datetime.now(timezone.utc).isoformat()
             self.repository_status[repo_name].update(
@@ -209,11 +199,11 @@ class RepositoryService:
             raise ServiceError(error_msg, error_code="UNEXPECTED_SEARCH_ERROR") from e
 
     def get_repository_status(self, repo_name):
-        """저장소 상태 조회 서비스 로직. repo_name은 URL에서 추출된 순수 이름이어야 함."""
-        # repo_name 정규화 (예: '.git' 제거, 소문자 변환 등) - 이미 _get_repo_name_from_url 에서 처리됨
+        """저장소 상태 조회. repo_name은 URL에서 추출된 순수 이름이어야 함."""
 
         if repo_name not in self.repository_status:
-            # 디스크에서 인덱스 존재 여부만으로 간단히 상태를 추론 (더 정교한 상태 관리 필요 시 DB 사용)
+            # 메모리에 상태 정보가 없는 경우 (예: 서버 재시작)
+            # 디스크의 인덱스 파일 존재 여부로 간이 상태 추론
             code_index_path = os.path.join(
                 Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code"
             )
@@ -224,36 +214,31 @@ class RepositoryService:
             doc_exists = os.path.exists(doc_index_path)
 
             if code_exists or doc_exists:
-                # 인덱스 파일은 존재하나, 메모리 상태가 없는 경우 (서버 재시작 등)
-                # 이 경우, 마지막 성공 상태로 간주하거나, 'unknown' 상태로 처리 가능
+                # 인덱스 파일은 존재하나, 상세 진행 기록은 없는 상태
                 return {
-                    "status": "completed",  # 또는 "unknown_completed"
+                    "status": "completed",
                     "repo_name": repo_name,
                     "code_index_status": "completed" if code_exists else "not_found",
                     "document_index_status": "completed" if doc_exists else "not_found",
-                    "progress_message": "인덱스 파일이 존재하지만, 상세 진행 기록은 없습니다.",
-                    "last_updated_time": datetime.now(
-                        timezone.utc
-                    ).isoformat(),  # 현재 시간으로 설정
+                    "progress_message": "인덱스 파일은 존재하나, 상세 진행 기록은 없습니다 (서버 재시작 가능성).",
+                    "last_updated_time": datetime.now(timezone.utc).isoformat(),
                 }
             else:
-                # 메모리에도 없고 디스크에도 파일이 없는 경우
-                # raise ServiceError(f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.", error_code="NOT_FOUND")
-                # API 컨트롤러에서 NOT_FOUND 응답을 하도록 상태 반환
+                # 메모리 및 디스크 모두에 정보 없음
                 return {
                     "status": "not_indexed",
                     "repo_name": repo_name,
                     "progress_message": "인덱싱된 정보가 없습니다.",
                 }
 
-        # 메모리에 상태가 있는 경우 그대로 반환
+        # 메모리에 상태가 있는 경우, 최신 시간으로 업데이트 후 반환
         self.repository_status[repo_name]["last_updated_time"] = datetime.now(
             timezone.utc
         ).isoformat()
         return self.repository_status[repo_name]
 
     def _update_error_status(self, repo_name, error_msg, error_code=None):
-        """오류 상태를 업데이트합니다."""
+        """인덱싱 오류 발생 시 상태를 'failed'로 업데이트합니다."""
         if repo_name in self.repository_status:
             current_time_iso = datetime.now(timezone.utc).isoformat()
             self.repository_status[repo_name].update(

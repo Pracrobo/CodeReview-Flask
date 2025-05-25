@@ -132,7 +132,7 @@ def create_faiss_index(
     index_path,
     index_type,  # "code" 또는 "document"
 ):
-    """문서와 임베딩 모델로 FAISS 인덱스 생성/저장 (실패 문서 제외)"""
+    """문서 리스트와 임베딩 모델을 사용하여 FAISS 인덱스를 생성하고 로컬에 저장합니다."""
     if not docs:
         logger.warning(
             f"{index_type} 인덱싱을 위한 문서가 없습니다. 인덱스 생성을 건너뜁니다."
@@ -141,11 +141,9 @@ def create_faiss_index(
 
     logger.info(f"{index_type}에 대한 FAISS 인덱스를 {index_path}에 생성합니다...")
 
-    # 1. 문서 내용만 추출
     doc_contents = [doc.page_content for doc in docs]
 
-    # 2. 임베딩 생성 (성공한 임베딩과 실패한 원본 인덱스 리스트 반환)
-    # embed_documents는 (성공 임베딩, 실패 원본 인덱스) 반환
+    # 임베딩 생성 (성공/실패 분리)
     try:
         successful_raw_embeddings, failed_original_indices = embeddings.embed_documents(
             doc_contents
@@ -161,21 +159,17 @@ def create_faiss_index(
         )
         return None
 
-    # 3. 성공한 문서와 메타데이터만 필터링
+    # 성공한 임베딩에 해당하는 원본 문서 및 메타데이터 필터링
     successful_docs_for_faiss = []
     if successful_raw_embeddings:
-        current_successful_idx = 0
         for i in range(len(docs)):
             if i not in failed_original_indices:
-                # 성공한 임베딩에 해당하는 문서. FAISS.from_documents용 Document 객체 리스트 생성.
                 successful_docs_for_faiss.append(docs[i])
-                current_successful_idx += 1
 
         if len(successful_raw_embeddings) != len(successful_docs_for_faiss):
             logger.error(
                 f"임베딩 수({len(successful_raw_embeddings)})와 필터링된 성공 문서 수({len(successful_docs_for_faiss)}) 불일치!"
             )
-            # 문제 발생 시 인덱싱 중단 또는 디버깅 필요
             raise IndexingError(
                 f"{index_type} 인덱스 생성 실패: 임베딩과 문서 매칭 오류"
             )
@@ -192,11 +186,7 @@ def create_faiss_index(
     )
 
     try:
-        # 성공한 문서들만 사용하여 FAISS 인덱스 생성.
-        # FAISS.from_documents는 내부적으로 embed_documents를 재호출할 수 있어 비효율적일 수 있음.
-        #
-        # 개선: FAISS.from_embeddings 사용 (성공한 텍스트-임베딩 쌍 직접 활용)
-        # 1. 성공한 문서의 텍스트와 해당 임베딩을 짝지음
+        # FAISS.from_embeddings를 사용하여 (텍스트, 임베딩) 쌍으로 인덱스 생성
         text_embedding_pairs = []
         successful_doc_contents_for_faiss = [
             doc.page_content for doc in successful_docs_for_faiss
@@ -214,17 +204,12 @@ def create_faiss_index(
                 (successful_doc_contents_for_faiss[i], successful_raw_embeddings[i])
             )
 
-        # FAISS.from_embeddings는 (텍스트, 임베딩) 쌍 리스트와 임베딩 객체, 메타데이터를 인자로 받음.
-        # FAISS.from_embeddings(text_embeddings: Iterable[Tuple[str, List[float]]], embedding: Embeddings, metadatas: Optional[Iterable[dict]] = None, **kwargs: Any)
-
+        # 임베딩 객체는 내부 정규화 등에 사용될 수 있음
         vector_store = FAISS.from_embeddings(
             text_embeddings=text_embedding_pairs,
-            embedding=embeddings,  # embeddings 객체는 여기서 재임베딩이 아닌 내부 정규화 등에 사용될 수 있음.
+            embedding=embeddings,
             metadatas=successful_doc_metadatas_for_faiss,
         )
-
-        # 기존 방식 (참고용, 비효율 가능성)
-        # vector_store = FAISS.from_documents(documents=successful_docs_for_faiss, embedding=embeddings)
 
         vector_store.save_local(index_path)
         logger.info(
@@ -273,14 +258,13 @@ def create_index_from_repo(
     local_repo_path,
     embedding_model_name,
 ):
-    """저장소 URL로부터 코드/문서 FAISS 인덱스 생성"""
+    """저장소 URL로부터 코드 및 문서 FAISS 인덱스를 생성합니다."""
     overall_start_time = time.time()
     vector_stores = {"code": None, "document": None}
 
     try:
-        # 저장소 복제 전에 주 사용 언어와 크기 검증
+        # 저장소 정보 (주 사용 언어, 크기) 확인
         logger.info("--- 저장소 정보 확인 중 ---")
-        # total_code_bytes 변수는 현재 사용되지 않으므로, 반환 값을 무시하도록 수정
         primary_language_name, _ = get_repo_primary_language(
             repo_url, Config.GITHUB_API_TOKEN
         )
@@ -289,7 +273,7 @@ def create_index_from_repo(
         clone_repo(repo_url, local_repo_path)
         repo_name_for_path = os.path.basename(local_repo_path.rstrip("/\\"))
 
-        # 임베딩 모델 초기화 (통합)
+        # 임베딩 모델 초기화
         lc_gemini_embeddings = GeminiAPIEmbeddings(
             model_name=embedding_model_name,
             document_task_type="RETRIEVAL_DOCUMENT",  # 문서 임베딩 시
