@@ -1,4 +1,3 @@
-from flask import jsonify
 from datetime import datetime, timezone
 
 
@@ -17,7 +16,7 @@ def success_response(
         "data": data,
         "timestamp": get_iso_timestamp(),
     }
-    return jsonify(response_data), status_code
+    return response_data, status_code
 
 
 def error_response(message, error_code=None, status_code=500):
@@ -28,7 +27,7 @@ def error_response(message, error_code=None, status_code=500):
         "error_code": error_code,
         "timestamp": get_iso_timestamp(),
     }
-    return jsonify(response_data), status_code
+    return response_data, status_code
 
 
 def in_progress_response(
@@ -41,4 +40,4 @@ def in_progress_response(
         "message": message,
         "timestamp": get_iso_timestamp(),
     }
-    return jsonify(response_data), status_code
+    return response_data, status_code
