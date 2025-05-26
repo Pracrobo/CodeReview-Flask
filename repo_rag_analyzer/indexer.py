@@ -58,23 +58,23 @@ def get_repo_primary_language(repo_url, token=None):
             )
             return "unknown", 0  # 언어 데이터가 없는 경우
 
-        # 총 바이트 수 계산
-        total_bytes = sum(languages.values())
+        # 주 사용 언어 및 해당 바이트 수 가져오기
         primary_language = max(languages, key=languages.get)
+        primary_language_bytes = languages[primary_language]
 
         logger.info(f"{repo_url}의 주 사용 언어 감지: {primary_language}")
         logger.info(
-            f"총 코드 바이트 수: {total_bytes:,} bytes ({total_bytes / (1024*1024):.1f} MB)"
+            f"주 사용 언어 ({primary_language}) 코드 바이트 수: {primary_language_bytes:,} bytes ({primary_language_bytes / (1024*1024):.1f} MB)"
         )
 
-        # 큰 저장소 검증 (Config.MAX_REPO_SIZE_MB 초과 시 중단)
+        # 주 사용 언어 코드 크기 검증 (Config.MAX_REPO_SIZE_MB 초과 시 중단)
         max_bytes = Config.MAX_REPO_SIZE_MB * 1024 * 1024  # MB를 바이트로 변환
-        if total_bytes > max_bytes:
-            error_msg = f"저장소가 너무 큽니다. 총 코드 크기: {total_bytes / (1024*1024):.1f} MB, 최대 허용: {Config.MAX_REPO_SIZE_MB:.1f} MB"
+        if primary_language_bytes > max_bytes:
+            error_msg = f"저장소의 주 사용 언어 코드 크기가 너무 큽니다. 크기: {primary_language_bytes / (1024*1024):.1f} MB, 최대 허용: {Config.MAX_REPO_SIZE_MB:.1f} MB"
             logger.error(error_msg)
             raise RepositorySizeError(error_msg)
 
-        return primary_language.lower(), total_bytes
+        return primary_language.lower(), primary_language_bytes
     except RepositorySizeError:
         # 크기 오류는 그대로 재발생
         raise
