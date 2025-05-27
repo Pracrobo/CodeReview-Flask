@@ -12,13 +12,13 @@ from common.response_utils import (
 )
 from common.validators import (
     validate_repo_url,
-    validate_search_request,  # validate_repo_name은 validate_search_request 내부에서 사용되므로 직접 임포트할 필요는 없을 수 있습니다.
+    validate_search_request,
 )
 from .swagger_config import (
     repo_index_request,
     repo_search_request,
     success_response_with_data,
-    error_response,
+    error_response as error_model,
     progress_response,
 )
 
@@ -38,8 +38,8 @@ class RepositoryIndex(Resource):
     @repository_ns.expect(repo_index_request, validate=True)
     @repository_ns.response(202, "인덱싱 작업 시작됨", progress_response)
     @repository_ns.response(200, "이미 인덱싱 완료됨", success_response_with_data)
-    @repository_ns.response(400, "잘못된 요청", error_response)
-    @repository_ns.response(500, "서버 내부 오류", error_response)
+    @repository_ns.response(400, "잘못된 요청", error_model)
+    @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """저장소 인덱싱 요청. 요청 즉시 응답 후 백그라운드에서 인덱싱 진행."""
         try:
@@ -99,8 +99,8 @@ class RepositorySearch(Resource):
     @repository_ns.doc("search_repository")
     @repository_ns.expect(repo_search_request, validate=True)
     @repository_ns.response(200, "검색 완료", success_response_with_data)
-    @repository_ns.response(400, "잘못된 요청", error_response)
-    @repository_ns.response(500, "서버 내부 오류", error_response)
+    @repository_ns.response(400, "잘못된 요청", error_model)
+    @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """저장소에서 코드 또는 문서 검색"""
         try:
@@ -108,11 +108,6 @@ class RepositorySearch(Resource):
 
             repo_name, query, search_type = validate_search_request(data)
 
-            # 검색 실행
-            # repo_service.search_repository가 repo_name을 처리하도록 수정되었다고 가정합니다.
-            # 만약 repo_service가 repo_url을 기대한다면, 여기서 변환이 필요합니다.
-            # 예: repo_url_for_service = f"https://github.com/{repo_name}"
-            # 이 예제에서는 repo_service가 repo_name을 직접 사용한다고 가정합니다.
             result = repo_service.search_repository(repo_name, query, search_type)
 
             return success_response(
@@ -147,9 +142,9 @@ class RepositoryStatus(Resource):
     )
     @repository_ns.response(200, "상태 조회 성공", success_response_with_data)
     @repository_ns.response(202, "인덱싱 진행 중", progress_response)
-    @repository_ns.response(404, "저장소를 찾을 수 없음", error_response)
-    @repository_ns.response(409, "인덱싱 실패", error_response)
-    @repository_ns.response(500, "서버 내부 오류", error_response)
+    @repository_ns.response(404, "저장소를 찾을 수 없음", error_model)
+    @repository_ns.response(409, "인덱싱 실패", error_model)
+    @repository_ns.response(500, "서버 내부 오류", error_model)
     def get(self, repo_name):
         """저장소 인덱싱 상태 확인"""
         try:
