@@ -156,18 +156,24 @@ class RepositoryService:
             logger.error(f"인덱싱 중 예상치 못한 오류 ({repo_url}): {e}", exc_info=True)
             raise ServiceError(error_msg, error_code="UNEXPECTED_INDEXING_ERROR") from e
 
-    def search_repository(self, repo_url, query, search_type="code"):
+    def search_repository(
+        self, repo_url, query, search_type="code"
+    ):  # 파라미터를 repo_url로 명확히 함
         """저장소 검색 서비스 로직"""
+        # repo_url에서 repo_name 추출
         repo_name = self._get_repo_name_from_url(repo_url)
 
         # 인덱스 존재 여부 확인
         if not self._check_index_exists(repo_name, search_type):
             raise ServiceError(
-                f"{search_type} 인덱스가 존재하지 않습니다. 먼저 저장소를 인덱싱해주세요."
+                f"'{repo_name}' 저장소의 {search_type} 인덱스가 존재하지 않습니다. 먼저 저장소를 인덱싱해주세요.",
+                error_code="INDEX_NOT_FOUND",
             )
 
         try:
-            logger.info(f"검색 시작: {repo_url}, 질의: {query}, 타입: {search_type}")
+            logger.info(
+                f"검색 시작: 저장소 '{repo_name}', 질의: '{query}', 타입: {search_type}"
+            )
 
             # 임베딩 모델 초기화
             embeddings = GeminiAPIEmbeddings(
@@ -177,12 +183,15 @@ class RepositoryService:
             )
 
             # 인덱스 경로 설정
-            index_path = self._get_index_path(repo_name, search_type)  # 헬퍼 함수 사용
+            index_path = self._get_index_path(repo_name, search_type)
 
             vector_store = load_faiss_index(index_path, embeddings, search_type)
 
             if not vector_store:
-                raise ServiceError(f"{search_type} 인덱스 로드에 실패했습니다.")
+                raise ServiceError(
+                    f"'{repo_name}' 저장소의 {search_type} 인덱스 로드에 실패했습니다.",
+                    error_code="INDEX_LOAD_FAILED",
+                )
 
             vector_stores = {search_type: vector_store}
 
@@ -196,16 +205,16 @@ class RepositoryService:
                 similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
             )
 
-            logger.info(f"검색 완료: {repo_url}")
+            logger.info(f"검색 완료: 저장소 '{repo_name}'")
 
             return {
                 "repo_name": repo_name,
                 "query": query,
                 "search_type": search_type,
                 "answer": rag_response,
-                "timestamp": datetime.now(
+                "result_generated_at": datetime.now(  # 'timestamp'에서 이름 변경
                     timezone.utc
-                ).isoformat(),  # UTC 시간으로 변경
+                ).isoformat(),
             }
 
         except RAGError as e:

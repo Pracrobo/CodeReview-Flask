@@ -148,6 +148,10 @@ search_results = api.model(
         ),
         "total_results": fields.Integer(description="총 결과 수", example=2),
         "search_time": fields.Float(description="검색 소요 시간 (초)", example=0.250),
+        "result_generated_at": fields.String(  # 'timestamp'에서 이름 변경
+            description="검색 결과 생성 시간 (ISO 8601)",  # 설명 변경
+            example="2024-07-22T11:18:00Z",  # 예시 시간 조정 가능
+        ),
     },
 )
 
@@ -163,8 +167,10 @@ success_response_with_data = api.model(
             description="응답 메시지",
             example="pallets/flask 저장소 검색 결과입니다.",
         ),
-        "data": fields.Nested(search_results, description="응답 데이터"),
-        "timestamp": fields.String(
+        "data": fields.Nested(
+            search_results, description="응답 데이터"
+        ),  # 여기의 search_results는 위에서 변경된 모델을 따름
+        "timestamp": fields.String(  # 이 timestamp는 API 응답 생성 시점의 timestamp로 유지
             required=True,
             description="응답 시간 (ISO 8601)",
             example="2024-07-22T11:20:00Z",
