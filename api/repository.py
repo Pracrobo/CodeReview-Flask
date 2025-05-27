@@ -53,19 +53,23 @@ class RepositoryIndex(Resource):
             repo_name_from_result = initial_status_result.get(
                 "repo_name", "알 수 없는 저장소"
             )
+            is_new_request = initial_status_result.get("is_new_request", False)
 
             if current_status == "indexing" or current_status == "pending":
-                if initial_status_result.get("is_new_request", False):
+                if is_new_request:
                     thread = threading.Thread(
                         target=repo_service.perform_indexing, args=(repo_url,)
                     )
                     thread.daemon = True
                     thread.start()
+                    message = f"저장소 '{repo_name_from_result}' 인덱싱 작업이 시작되었습니다. 상태 API로 확인하세요."
+                else:
+                    message = f"저장소 '{repo_name_from_result}' 인덱싱 작업이 이미 진행 중입니다. 상태 API로 확인하세요."
 
                 # 진행 중 응답으로 변경
                 return in_progress_response(
                     progress_data=initial_status_result,
-                    message=f"저장소 '{repo_name_from_result}' 인덱싱 작업이 시작되었거나 이미 진행 중입니다. 상태 API로 확인하세요.",
+                    message=message,
                     status_code=202,
                 )
             elif current_status == "completed":
