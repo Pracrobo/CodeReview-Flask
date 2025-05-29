@@ -11,7 +11,8 @@ class Config:
 
     # API 키
     GITHUB_API_TOKEN = os.getenv("GITHUB_API_TOKEN")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GEMINI_API_KEY1 = os.getenv("GEMINI_API_KEY1")
+    GEMINI_API_KEY2 = os.getenv("GEMINI_API_KEY2")
 
     # 모델 이름 (지정된 최신 모델, 변경 주의)
     DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-exp-03-07"
@@ -28,10 +29,12 @@ class Config:
     EMBEDDING_BATCH_SIZE = 50  # Gemini API 임베딩 요청 시 배치 크기
     FAISS_ADD_BATCH_SIZE = 100  # FAISS 인덱스에 문서 추가 시 배치 크기
     MAX_RETRIES = 10  # API 호출 최대 재시도 횟수
+    EMBEDDING_DIMENSION = 768  # 임베딩 벡터 차원 설정
 
     # API 오류별 대기 시간 설정 (초 단위)
     QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
     GENERAL_API_ERROR_SLEEP_TIME = 5  # 일반 API 오류 시 대기 시간
+    SUCCESS_SLEEP_TIME = 60  # 성공적인 임베딩 후 대기 시간
 
     # 문서 파일 확장자
     DOCUMENT_FILE_EXTENSIONS = (".md", ".markdown", ".rst", ".txt")
@@ -41,8 +44,8 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # 검색 설정
-    DEFAULT_TOP_K = 15  # 코드 검색을 위해 증가
-    DEFAULT_SIMILARITY_THRESHOLD = 0.4  # 코드 검색을 위해 완화
+    DEFAULT_TOP_K = 5  # 코드 검색을 위해 증가
+    DEFAULT_SIMILARITY_THRESHOLD = 0.5  # 코드 검색을 위해 완화
 
     # API 서비스 설정 추가
     API_VERSION = "v1"
@@ -73,5 +76,7 @@ LANGUAGE_TO_DETAILS = {
     # 추가 언어 지원 시 여기에 추가
 }
 
-if not Config.GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY를 .env 파일이나 환경 변수에서 찾을 수 없습니다.")
+if not Config.GEMINI_API_KEY1 or not Config.GEMINI_API_KEY2:
+    raise ValueError(
+        "GEMINI_API_KEY1 또는 GEMINI_API_KEY2를 .env 파일이나 환경 변수에서 찾을 수 없습니다."
+    )

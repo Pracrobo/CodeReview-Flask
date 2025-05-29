@@ -1,7 +1,8 @@
 from flask import Flask
 import logging
 
-from api.repository import repository_bp
+from api.swagger_config import api
+from api.repository import repository_ns
 from config import Config
 
 
@@ -14,8 +15,11 @@ def create_app():
         level=getattr(logging, Config.LOG_LEVEL), format=Config.LOG_FORMAT
     )
 
-    # Blueprint 등록
-    app.register_blueprint(repository_bp, url_prefix="/api")
+    # Flask-RESTX API 초기화
+    api.init_app(app)
+
+    # Namespace 등록
+    api.add_namespace(repository_ns, path="/api/repository")
 
     @app.route("/")
     def home():
@@ -23,6 +27,7 @@ def create_app():
             "service": "AIssue Repository RAG 분석 서비스",
             "version": Config.API_VERSION,
             "status": "running",
+            "swagger_docs": "/docs/",  # Swagger UI 링크 추가
         }
 
     return app
