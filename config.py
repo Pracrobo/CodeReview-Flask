@@ -34,6 +34,7 @@ class Config:
     # API 오류별 대기 시간 설정 (초 단위)
     QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
     GENERAL_API_ERROR_SLEEP_TIME = 5  # 일반 API 오류 시 대기 시간
+    SUCCESS_SLEEP_TIME = 60  # 성공적인 임베딩 후 대기 시간
 
     # 문서 파일 확장자
     DOCUMENT_FILE_EXTENSIONS = (".md", ".markdown", ".rst", ".txt")
@@ -44,7 +45,7 @@ class Config:
 
     # 검색 설정
     DEFAULT_TOP_K = 5  # 코드 검색을 위해 증가
-    DEFAULT_SIMILARITY_THRESHOLD = 0.4  # 코드 검색을 위해 완화
+    DEFAULT_SIMILARITY_THRESHOLD = 0.5  # 코드 검색을 위해 완화
 
     # API 서비스 설정 추가
     API_VERSION = "v1"
