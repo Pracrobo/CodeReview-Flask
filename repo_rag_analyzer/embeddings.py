@@ -2,7 +2,8 @@ import logging
 import time
 import traceback
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from langchain_core.embeddings import Embeddings
 
 from config import Config
@@ -25,7 +26,7 @@ class GeminiAPIEmbeddings(Embeddings):
         self.document_task_type = document_task_type
         self.query_task_type = query_task_type
         self.max_retries = Config.MAX_RETRIES
-        genai.configure(api_key=Config.GEMINI_API_KEY)  # API 키 설정
+        self.client = genai.Client(api_key=Config.GEMINI_API_KEY1)  # 클라이언트 초기화
 
     def _calculate_sleep_time(self, is_quota_error):
         """오류 유형별 API 재시도 대기 시간 계산"""
@@ -66,19 +67,23 @@ class GeminiAPIEmbeddings(Embeddings):
             try:
                 while retries_count < self.max_retries:
                     try:
-                        result = genai.embed_content(
+                        result = self.client.models.embed_content(
                             model=self.model_name,
-                            content=batch_texts,
-                            task_type=self.document_task_type,
+                            contents=batch_texts,
+                            config=types.EmbedContentConfig(
+                                output_dimensionality=Config.EMBEDDING_DIMENSION
+                            ),
                         )
-                        current_batch_embeddings = result["embedding"]
+                        # ContentEmbedding 객체에서 실제 벡터 값 추출
+                        current_batch_embeddings = [
+                            emb.values for emb in result.embeddings
+                        ]
                         successful_embeddings.extend(current_batch_embeddings)
                         successful_count += len(current_batch_embeddings)
-                        # 성공 시 처리 수 증가
                         logger.debug(
                             f"배치 {current_batch_num} 임베딩 성공 ({len(current_batch_embeddings)}개)."
                         )
-                        break  # 성공 시 루프 탈출
+                        break
                     except Exception as e_emb_docs:
                         retries_count += 1
                         logger.warning(
@@ -132,13 +137,15 @@ class GeminiAPIEmbeddings(Embeddings):
         logger.info(f"쿼리 임베딩 중 (Task: {self.query_task_type})...")
         while retries_count < self.max_retries:
             try:
-                result = genai.embed_content(
+                result = self.client.models.embed_content(
                     model=self.model_name,
-                    content=text,
-                    task_type=self.query_task_type,
+                    contents=[text],
+                    config=types.EmbedContentConfig(
+                        output_dimensionality=Config.EMBEDDING_DIMENSION
+                    ),
                 )
-                logger.debug("쿼리 임베딩 성공.")
-                return result["embedding"]
+                # ContentEmbedding 객체에서 실제 벡터 값 추출
+                return result.embeddings[0].values
             except Exception as e_emb_query:
                 retries_count += 1
                 logger.warning(

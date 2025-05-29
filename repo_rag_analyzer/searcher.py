@@ -1,6 +1,7 @@
 import logging
 
-import google.generativeai as genai
+from google import genai
+
 
 # FAISS CPU 전용 설정 (GPU 경고 방지)
 import faiss
@@ -13,11 +14,13 @@ faiss.omp_set_num_threads(1)  # CPU 스레드 수 제한으로 안정성 향상
 # 로거 설정
 logger = logging.getLogger(__name__)
 
+# Gemini 클라이언트 초기화
+client = genai.Client(api_key=Config.GEMINI_API_KEY1)
+
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
     try:
-        llm = genai.GenerativeModel(llm_model_name)
         prompt = f"""
         다음 한국어 코드 관련 질문을 영어로 번역해주세요. 
         프로그래밍 용어, 함수명, 클래스명, 변수명은 정확히 유지하세요.
@@ -28,7 +31,7 @@ def translate_code_query_to_english(korean_text, llm_model_name):
         
         English question:
         """
-        response = llm.generate_content(prompt)
+        response = client.models.generate_content(model=llm_model_name, contents=prompt)
         english_text = response.text.strip()
         logger.info(f"코드 질의 번역 완료: '{korean_text}' -> '{english_text}'")
         return english_text
@@ -40,7 +43,6 @@ def translate_code_query_to_english(korean_text, llm_model_name):
 def translate_to_english(korean_text, llm_model_name):
     """일반 한국어 텍스트 영어 번역"""
     try:
-        llm = genai.GenerativeModel(llm_model_name)
         prompt = f"""
         다음 한국어 텍스트를 자연스러운 영어로 번역해주세요. 기술적 용어는 정확히 번역하세요.
         번역된 영어 텍스트만 출력하고 다른 설명은 하지 마세요.
@@ -49,7 +51,7 @@ def translate_to_english(korean_text, llm_model_name):
         
         영어:
         """
-        response = llm.generate_content(prompt)
+        response = client.models.generate_content(model=llm_model_name, contents=prompt)
         english_text = response.text.strip()
         logger.info(f"번역 완료: '{korean_text}' -> '{english_text}'")
         return english_text
@@ -152,8 +154,7 @@ def search_and_rag(
         logger.info(
             f"\n'{llm_model_name}' 모델을 사용하여 RAG 답변 생성을 시작합니다..."
         )
-        llm = genai.GenerativeModel(llm_model_name)
-        response = llm.generate_content(prompt)
+        response = client.models.generate_content(model=llm_model_name, contents=prompt)
 
         logger.info("RAG 답변 생성 완료.")
         return response.text
