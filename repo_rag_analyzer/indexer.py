@@ -105,10 +105,27 @@ def clone_repo(repo_url, local_path):
         raise RepositoryError(f"저장소 복제 실패: {e}") from e
 
 
-def load_documents_from_path(path, file_extensions, encoding="utf-8"):
-    """경로에서 특정 확장자 파일 로드 (Document 객체 리스트)"""
+def load_documents_from_path(path, file_extensions, encoding="utf-8", max_depth=None):
+    """경로에서 특정 확장자 파일 로드 (Document 객체 리스트)
+
+    Args:
+        path: 탐색할 루트 경로
+        file_extensions: 파일 확장자 튜플
+        encoding: 파일 인코딩
+        max_depth: 최대 탐색 깊이 (None이면 제한 없음, 0이면 현재 디렉토리만, 1이면 한 depth까지)
+    """
     docs = []
-    for root, _, files in os.walk(path):
+    root_path = os.path.abspath(path)
+
+    for root, dirs, files in os.walk(path):
+        # 현재 디렉토리의 깊이 계산
+        current_depth = root.replace(root_path, "").count(os.sep)
+
+        # 최대 깊이 제한 확인
+        if max_depth is not None and current_depth > max_depth:
+            dirs.clear()  # 더 깊은 디렉토리 탐색 중단
+            continue
+
         for file in files:
             if file.endswith(file_extensions):
                 file_path = os.path.join(root, file)
@@ -120,8 +137,10 @@ def load_documents_from_path(path, file_extensions, encoding="utf-8"):
                     )
                 except Exception as e:
                     logger.warning(f"{file_path} 파일 로드 중 오류 발생: {e}")
+
+    depth_info = f" (최대 깊이: {max_depth})" if max_depth is not None else ""
     logger.info(
-        f"{path} 경로에서 {len(docs)}개의 문서를 로드했습니다 ({file_extensions})."
+        f"{path} 경로에서 {len(docs)}개의 문서를 로드했습니다 ({file_extensions}){depth_info}."
     )
     return docs
 
@@ -345,10 +364,10 @@ def create_index_from_repo(
 
         if not vector_stores["document"]:
             logger.info(
-                f"'{local_repo_path}'에서 문서 파일을 로드합니다 (확장자: {Config.DOCUMENT_FILE_EXTENSIONS})..."
+                f"'{local_repo_path}'에서 문서 파일을 로드합니다 (확장자: {Config.DOCUMENT_FILE_EXTENSIONS}, 최대 깊이: 1)..."
             )
             doc_files = load_documents_from_path(
-                local_repo_path, Config.DOCUMENT_FILE_EXTENSIONS
+                local_repo_path, Config.DOCUMENT_FILE_EXTENSIONS, max_depth=1
             )
 
             if doc_files:
