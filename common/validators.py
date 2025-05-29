@@ -43,8 +43,8 @@ def validate_repo_name(data):
     # owner/repo 형식 검증
     # GitHub 사용자 이름/조직 이름 및 저장소 이름 규칙을 단순화하여 적용
     # 일반적으로 영숫자, 하이픈(-), 밑줄(_), 점(.) 허용
-    # 사용자 이름/조직 이름은 하이픈으로 시작하거나 끝날 수 없음, 연속된 하이픈 불가 (여기서는 단순화)
-    # 저장소 이름은 밑줄로 시작할 수 없음 (여기서는 단순화)
+    # 사용자 이름/조직 이름은 하이픈으로 시작하거나 끝날 수 없음, 연속된 하이픈 불가
+    # 저장소 이름은 밑줄로 시작할 수 없음
     repo_name_pattern = r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
     if not re.match(repo_name_pattern, repo_name):
         raise ValidationError(

@@ -113,7 +113,6 @@ class RepositorySearch(Resource):
             repo_name, query, search_type = validate_search_request(data)
 
             # repo_name을 repo_url로 변환
-            # 여기서는 GitHub URL을 가정합니다. 다른 Git 호스팅 서비스를 지원하려면 수정 필요.
             repo_url = f"https://github.com/{repo_name}"
 
             result = repo_service.search_repository(
