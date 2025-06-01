@@ -74,7 +74,12 @@ repo_index_request = api.model(
         "callback_url": fields.String(
             required=False,
             description="분석 완료 시 콜백할 Express API URL",
-            example="http://localhost:3001/api/internal/analysis-complete"
+            example="http://localhost:3001/internal/analysis-complete"
+        ),
+        "user_id": fields.Integer(
+            required=False,
+            description="분석을 요청한 사용자 ID",
+            example=1
         )
     },
 )
@@ -243,15 +248,18 @@ class RepositoryIndex(Resource):
             repo_url = validate_repo_url(data)
             repository_info = data.get('repository_info', {})
             callback_url = data.get('callback_url')
+            user_id = data.get('user_id')
             
             logger.info(f"Express에서 인덱싱 요청 받음: {repo_url}")
             if repository_info:
                 logger.info(f"저장소 정보: {repository_info.get('fullName', 'N/A')}")
-            if callback_url:
-                logger.info(f"콜백 URL: {callback_url}")
+            if user_id:
+                logger.info(f"요청 사용자 ID: {user_id}")
             
-            # IndexingService의 메서드 호출 (callback_url 전달)
-            initial_status_result = indexing_service.prepare_and_start_indexing(repo_url, callback_url)
+            # 인덱싱 서비스에 콜백 URL과 사용자 ID 전달
+            initial_status_result = indexing_service.prepare_and_start_indexing(
+                repo_url, callback_url, user_id
+            )
             repo_name = status_service._get_repo_name_from_url(repo_url)
 
             current_status = initial_status_result.get("status")
@@ -393,23 +401,100 @@ class RepositoryStatus(Resource):
             logger.error(f"예상치 못한 오류 (status): {e}", exc_info=True)
             return error_response(message="상태 조회 중 서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 
 
-# README 요약 요청 모델
+# README 요약 관련 모델들
 readme_summary_request = api.model(
     "ReadmeSummaryRequest",
     {
-        "repo_name": fields.String(required=True, description="저장소 이름 (owner/repo)", example="facebook/react"),
-        "readme_content": fields.String(required=True, description="README 파일 내용"),
+        "repo_name": fields.String(
+            required=True,
+            description="GitHub 저장소 이름 (owner/repository 형식)",
+            example="pallets/flask",
+        ),
+        "readme_content": fields.String(
+            required=True,
+            description="README 파일 내용",
+            example="# Flask\\n\\nFlask is a lightweight WSGI web application framework...",
+        ),
     },
 )
 
-# README 요약 응답 모델
 readme_summary_response = api.model(
     "ReadmeSummaryResponse",
     {
-        "status": fields.String(required=True, description="응답 상태", example="success"),
-        "message": fields.String(required=True, description="응답 메시지"),
-        "data": fields.Raw(description="요약 결과 데이터"),
-        "timestamp": fields.String(required=True, description="응답 시간 (ISO 8601)"),
+        "status": fields.String(
+            required=True, description="응답 상태", example="success"
+        ),
+        "message": fields.String(
+            required=True,
+            description="응답 메시지",
+            example="README 요약이 완료되었습니다.",
+        ),
+        "data": fields.Raw(
+            description="요약 결과",
+            example={
+                "repo_name": "pallets/flask",
+                "summary": "Flask는 Python으로 작성된 경량 웹 애플리케이션 프레임워크입니다...",
+                "original_length": 1500,
+                "summary_length": 120,
+            },
+        ),
+        "timestamp": fields.String(
+            required=True,
+            description="응답 시간 (ISO 8601)",
+            example="2024-07-22T11:20:00Z",
+        ),
+    },
+)
+
+# 번역 관련 모델들
+translation_request = api.model(
+    "TranslationRequest",
+    {
+        "text": fields.String(
+            required=True,
+            description="번역할 텍스트",
+            example="A lightweight WSGI web application framework",
+        ),
+        "source_language": fields.String(
+            required=False,
+            description="원본 언어 (기본값: auto)",
+            default="auto",
+            example="en",
+        ),
+        "target_language": fields.String(
+            required=False,
+            description="대상 언어 (기본값: ko)",
+            default="ko",
+            example="ko",
+        ),
+    },
+)
+
+translation_response = api.model(
+    "TranslationResponse",
+    {
+        "status": fields.String(
+            required=True, description="응답 상태", example="success"
+        ),
+        "message": fields.String(
+            required=True,
+            description="응답 메시지",
+            example="번역이 완료되었습니다.",
+        ),
+        "data": fields.Raw(
+            description="번역 결과",
+            example={
+                "original_text": "A lightweight WSGI web application framework",
+                "translated_text": "경량 WSGI 웹 애플리케이션 프레임워크",
+                "source_language": "en",
+                "target_language": "ko",
+            },
+        ),
+        "timestamp": fields.String(
+            required=True,
+            description="응답 시간 (ISO 8601)",
+            example="2024-07-22T11:20:00Z",
+        ),
     },
 )
 
@@ -484,4 +569,83 @@ class ReadmeSummary(Resource):
             return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
         except Exception as e:
             logger.error(f"예상치 못한 오류 (summarize-readme): {e}", exc_info=True)
-            return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 
+            return error_response(
+                message="README 요약 중 서버 내부 오류가 발생했습니다.",
+                error_code="INTERNAL_SERVER_ERROR",
+                status_code=500,
+            )
+
+@repository_ns.route("/translate")
+class Translation(Resource):
+    """텍스트 번역 API"""
+
+    @repository_ns.doc("translate_text")
+    @repository_ns.expect(translation_request, validate=True)
+    @repository_ns.response(200, "번역 완료", translation_response)
+    @repository_ns.response(400, "잘못된 요청", error_model)
+    @repository_ns.response(500, "서버 내부 오류", error_model)
+    def post(self):
+        """텍스트를 번역합니다."""
+        try:
+            data = request.get_json()
+            text = data.get("text", "").strip()
+            source_language = data.get("source_language", "auto")
+            target_language = data.get("target_language", "ko")
+
+            if not text:
+                return error_response(
+                    message="번역할 텍스트가 필요합니다.",
+                    error_code="MISSING_TEXT",
+                    status_code=400,
+                )
+
+            logger.info(f"번역 요청 받음: {len(text)}자")
+
+            # 번역 서비스 초기화 및 실행
+            from ..services.translator import Translator
+            translator = Translator()
+            
+            translated_text = translator.translate_text(
+                text=text,
+                source_language=source_language,
+                target_language=target_language
+            )
+
+            if translated_text:
+                response_data = {
+                    "original_text": text,
+                    "translated_text": translated_text,
+                    "source_language": source_language,
+                    "target_language": target_language,
+                }
+
+                logger.info(f"번역 완료: {len(text)}자 -> {len(translated_text)}자")
+                return success_response(
+                    message="번역이 완료되었습니다.",
+                    data=response_data,
+                )
+            else:
+                logger.warning("번역 실패, 원본 텍스트 반환")
+                return error_response(
+                    message="번역에 실패했습니다. 원본 텍스트를 사용해주세요.",
+                    error_code="TRANSLATION_FAILED",
+                    status_code=500,
+                )
+
+        except ValidationError as e:
+            logger.warning(f"번역 요청 검증 오류: {e}")
+            return error_response(
+                message=str(e), error_code="VALIDATION_ERROR", status_code=400
+            )
+        except ServiceError as e:
+            logger.error(f"번역 서비스 오류: {e}")
+            return error_response(
+                message=str(e), error_code="SERVICE_ERROR", status_code=500
+            )
+        except Exception as e:
+            logger.error(f"번역 중 예상치 못한 오류: {e}")
+            return error_response(
+                message="번역 중 서버 내부 오류가 발생했습니다.",
+                error_code="INTERNAL_SERVER_ERROR",
+                status_code=500,
+            ) 

@@ -9,6 +9,7 @@ from google.genai import types
 
 from app.core.config import Config
 from app.core.exceptions import ServiceError
+from app.core.prompts import prompts
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,12 @@ class ReadmeSummarizer:
     def __init__(self):
         """README 요약 서비스 초기화"""
         self.llm_model = Config.DEFAULT_LLM_MODEL
-        self.max_retries = 3
+        # 프롬프트 설정에서 값 가져오기
+        prompt_config = prompts.get_prompt_config()
+        self.max_retries = prompt_config["readme_summary"]["retry_count"]
+        self.min_summary_length = prompt_config["readme_summary"]["min_summary_length"]
+        self.temperature = prompt_config["readme_summary"]["temperature"]
+        self.max_output_tokens = prompt_config["readme_summary"]["max_output_tokens"]
         self._client = None
     
     def _get_client(self):
@@ -61,36 +67,30 @@ class ReadmeSummarizer:
         # 인라인 코드 간소화
         content = re.sub(r'`([^`]+)`', r'[\1]', content)
         
+        # 배지(badge) 제거
+        content = re.sub(r'\[!\[.*?\]\(.*?\)\]\(.*?\)', '', content)
+        
+        # 목차(Table of Contents) 제거
+        content = re.sub(r'(?i)## table of contents.*?(?=##|\Z)', '', content, flags=re.DOTALL)
+        content = re.sub(r'(?i)## contents.*?(?=##|\Z)', '', content, flags=re.DOTALL)
+        
+        # 설치 방법, 사용법 등 긴 섹션 간소화
+        content = re.sub(r'(?i)## installation.*?(?=##|\Z)', '[설치 방법 생략]', content, flags=re.DOTALL)
+        content = re.sub(r'(?i)## usage.*?(?=##|\Z)', '[사용법 생략]', content, flags=re.DOTALL)
+        content = re.sub(r'(?i)## examples.*?(?=##|\Z)', '[예제 생략]', content, flags=re.DOTALL)
+        content = re.sub(r'(?i)## contributing.*?(?=##|\Z)', '[기여 방법 생략]', content, flags=re.DOTALL)
+        content = re.sub(r'(?i)## license.*?(?=##|\Z)', '[라이선스 정보 생략]', content, flags=re.DOTALL)
+        
         # 연속된 공백과 줄바꿈 정리
         content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)
         content = re.sub(r' +', ' ', content)
         
-        # 너무 긴 내용은 잘라내기 (토큰 제한 고려)
-        if len(content) > 8000:
-            content = content[:8000] + "..."
-            logger.warning("README 내용이 너무 길어서 8000자로 제한했습니다.")
+        # 토큰 제한을 고려하여 더 적극적으로 단축 (프롬프트 토큰 절약)
+        if len(content) > 4000:  # 8000에서 4000으로 줄임
+            content = content[:4000] + "..."
+            logger.warning("README 내용이 너무 길어서 4000자로 제한했습니다.")
         
         return content.strip()
-    
-    def _create_summary_prompt(self, repo_name: str, readme_content: str) -> str:
-        """README 요약을 위한 프롬프트 생성"""
-        return f"""
-다음은 GitHub 저장소 '{repo_name}'의 README 파일 내용입니다.
-이 내용을 바탕으로 한국어로 간결하고 명확한 요약을 작성해주세요.
-
-요약 작성 지침:
-1. 2-3문장으로 핵심 내용만 요약
-2. 프로젝트의 목적과 주요 기능을 포함
-3. 기술적 용어는 적절히 한국어로 번역하되, 널리 알려진 용어는 원문 유지
-4. 설치나 사용법 등의 세부사항은 제외
-5. 마케팅성 문구나 과장된 표현은 피하고 객관적으로 서술
-6. 요약문만 출력하고 다른 설명은 하지 마세요
-
-README 내용:
-{readme_content}
-
-요약:
-"""
     
     def summarize_readme(self, repo_name: str, readme_content: str) -> Optional[str]:
         """README 내용을 요약합니다.
@@ -106,6 +106,11 @@ README 내용:
             logger.warning(f"README 내용이 비어있습니다: {repo_name}")
             return None
         
+        # 프롬프트 입력값 검증
+        if not prompts.validate_prompt_inputs(repo_name=repo_name, readme_content=readme_content):
+            logger.warning(f"프롬프트 입력값이 유효하지 않습니다: {repo_name}")
+            return None
+        
         try:
             # README 내용 전처리
             cleaned_content = self._clean_readme_content(readme_content)
@@ -114,7 +119,7 @@ README 내용:
                 return None
             
             # 프롬프트 생성
-            prompt = self._create_summary_prompt(repo_name, cleaned_content)
+            prompt = prompts.get_readme_summary_prompt(repo_name, cleaned_content)
             
             # Gemini API 호출
             client = self._get_client()
@@ -127,18 +132,116 @@ README 내용:
                         model=self.llm_model,
                         contents=prompt,
                         config=types.GenerateContentConfig(
-                            temperature=0.3,  # 일관성 있는 요약을 위해 낮은 온도
-                            max_output_tokens=500,  # 요약문 길이 제한
+                            temperature=self.temperature,
+                            max_output_tokens=self.max_output_tokens,
                         )
                     )
                     
-                    summary = response.text.strip()
+                    # 응답에서 텍스트 안전하게 추출
+                    summary = None
                     
-                    if summary and len(summary) > 10:  # 최소 길이 검증
-                        logger.info(f"README 요약 완료: {repo_name}")
+                    # 응답 구조 상세 디버깅
+                    logger.debug(f"응답 타입: {type(response)}")
+                    logger.debug(f"응답 속성들: {dir(response)}")
+                    
+                    # 응답을 JSON으로 변환하여 구조 확인
+                    try:
+                        if hasattr(response, '_pb'):
+                            logger.debug(f"응답 _pb 구조: {response._pb}")
+                        if hasattr(response, 'to_dict'):
+                            response_dict = response.to_dict()
+                            logger.debug(f"응답 딕셔너리: {response_dict}")
+                        elif hasattr(response, '__dict__'):
+                            logger.debug(f"응답 __dict__: {response.__dict__}")
+                    except Exception as debug_e:
+                        logger.debug(f"응답 구조 디버깅 중 오류: {debug_e}")
+                    
+                    # 방법 1: 직접 text 속성 확인
+                    if hasattr(response, 'text') and response.text:
+                        summary = response.text.strip()
+                        logger.debug(f"방법 1 성공 - 직접 text 속성: {len(summary)}자")
+                    
+                    # 방법 2: candidates 구조에서 추출
+                    elif hasattr(response, 'candidates') and response.candidates:
+                        logger.debug(f"candidates 수: {len(response.candidates)}")
+                        
+                        for i, candidate in enumerate(response.candidates):
+                            logger.debug(f"candidate {i} 속성들: {dir(candidate)}")
+                            
+                            # content.parts에서 텍스트 추출
+                            if hasattr(candidate, 'content') and candidate.content:
+                                logger.debug(f"candidate {i} content 속성들: {dir(candidate.content)}")
+                                
+                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                    logger.debug(f"candidate {i} parts 수: {len(candidate.content.parts)}")
+                                    
+                                    for j, part in enumerate(candidate.content.parts):
+                                        logger.debug(f"part {j} 속성들: {dir(part)}")
+                                        
+                                        if hasattr(part, 'text') and part.text:
+                                            summary = part.text.strip()
+                                            logger.debug(f"방법 2 성공 - candidate {i} part {j}: {len(summary)}자")
+                                            break
+                                
+                                # content에 직접 text가 있는 경우
+                                elif hasattr(candidate.content, 'text') and candidate.content.text:
+                                    summary = candidate.content.text.strip()
+                                    logger.debug(f"방법 2-2 성공 - candidate {i} content.text: {len(summary)}자")
+                                    break
+                            
+                            # candidate에 직접 text가 있는 경우
+                            elif hasattr(candidate, 'text') and candidate.text:
+                                summary = candidate.text.strip()
+                                logger.debug(f"방법 2-3 성공 - candidate {i}.text: {len(summary)}자")
+                                break
+                            
+                            if summary:
+                                break
+                    
+                    # 방법 3: 문자열 변환 후 파싱
+                    if not summary:
+                        try:
+                            response_str = str(response)
+                            logger.debug(f"응답 문자열 (처음 500자): {response_str[:500]}")
+                            
+                            # 일반적인 패턴으로 텍스트 추출 시도
+                            import re
+                            
+                            # "text": "내용" 패턴 찾기
+                            text_match = re.search(r'"text":\s*"([^"]+)"', response_str)
+                            if text_match:
+                                summary = text_match.group(1).strip()
+                                logger.debug(f"방법 3-1 성공 - 정규식 text 패턴: {len(summary)}자")
+                            
+                            # 'text': '내용' 패턴 찾기
+                            elif re.search(r"'text':\s*'([^']+)'", response_str):
+                                text_match = re.search(r"'text':\s*'([^']+)'", response_str)
+                                summary = text_match.group(1).strip()
+                                logger.debug(f"방법 3-2 성공 - 정규식 text 패턴 (단일 따옴표): {len(summary)}자")
+                                
+                        except Exception as str_e:
+                            logger.debug(f"문자열 파싱 중 오류: {str_e}")
+                    
+                    # 방법 4: 최신 API 방식 시도
+                    if not summary:
+                        try:
+                            # 최신 Gemini API에서 사용하는 방식
+                            if hasattr(response, 'parts') and response.parts:
+                                for part in response.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        summary = part.text.strip()
+                                        logger.debug(f"방법 4 성공 - 직접 parts: {len(summary)}자")
+                                        break
+                        except Exception as parts_e:
+                            logger.debug(f"parts 접근 중 오류: {parts_e}")
+                    
+                    if summary:
+                        logger.info(f"README 요약 성공: {repo_name} ({len(summary)}자)")
                         return summary
                     else:
-                        logger.warning(f"요약 결과가 너무 짧습니다: {repo_name}")
+                        logger.warning(f"응답에서 텍스트를 추출할 수 없습니다: {repo_name}")
+                        # 실제 응답 내용을 더 자세히 로그
+                        logger.warning(f"응답 전체 내용: {response}")
                         continue
                         
                 except Exception as e:
@@ -166,22 +269,26 @@ README 내용:
             else:
                 owner, name = 'unknown', repo_name
             
+            # 기본 설명 템플릿 가져오기
+            templates = prompts.get_fallback_description_templates()
+            
             # 기본 설명 템플릿
             if repo_info and repo_info.get('description'):
                 return repo_info['description']
             
             # 저장소 이름 기반 기본 설명
             if any(keyword in name.lower() for keyword in ['api', 'server', 'backend']):
-                return f"{name}은(는) API 서버 또는 백엔드 서비스입니다."
+                return templates["api_server"].format(name=name)
             elif any(keyword in name.lower() for keyword in ['frontend', 'ui', 'web', 'app']):
-                return f"{name}은(는) 프론트엔드 웹 애플리케이션입니다."
+                return templates["frontend"].format(name=name)
             elif any(keyword in name.lower() for keyword in ['lib', 'library', 'package']):
-                return f"{name}은(는) 개발용 라이브러리 또는 패키지입니다."
+                return templates["library"].format(name=name)
             elif any(keyword in name.lower() for keyword in ['tool', 'cli', 'util']):
-                return f"{name}은(는) 개발 도구 또는 유틸리티입니다."
+                return templates["tool"].format(name=name)
             else:
-                return f"{name}은(는) {owner}에서 개발한 오픈소스 프로젝트입니다."
+                return templates["default"].format(name=name, owner=owner)
                 
         except Exception as e:
             logger.warning(f"기본 설명 생성 실패: {repo_name} - {e}")
-            return f"{repo_name} 저장소입니다." 
+            templates = prompts.get_fallback_description_templates()
+            return templates["unknown"].format(repo_name=repo_name) 

@@ -14,7 +14,7 @@ def main():
     print(f"  - Host: {host}")
     print(f"  - Port: {port}")
     print(f"  - Debug: {debug}")
-    print(f"  - Swagger UI: http://{host}:{port}/api/docs/")
+    print(f"  - Swagger UI: http://{host}:{port}/docs/")
     
     app.run(host=host, port=port, debug=debug)
 

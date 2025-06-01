@@ -7,7 +7,7 @@ from flask_restx import Api
 api_bp = Blueprint('api', __name__)
 
 # Flask-RESTX Api 객체 생성 및 Blueprint에 연결
-# doc='/docs/'를 설정하여 Swagger UI 경로를 /api/docs/ 로 만듭니다.
+# doc='/docs/'를 설정하여 Swagger UI 경로를 /docs/ 로 만듭니다.
 api = Api(api_bp, 
           version='1.0', 
           title='AIssue Repository RAG 분석 API',
@@ -16,7 +16,7 @@ api = Api(api_bp,
 
 # 네임스페이스 임포트 및 등록
 from .repository_api import repository_ns # repository_api.py 에서 정의된 네임스페이스
-api.add_namespace(repository_ns, path='/repository') # Blueprint의 /api 뒤에 /repository가 붙음 -> /api/repository
+api.add_namespace(repository_ns, path='/repository')
 
 # 다른 네임스페이스가 있다면 여기에 추가
 # from .another_api import another_ns

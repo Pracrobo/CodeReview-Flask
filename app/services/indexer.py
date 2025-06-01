@@ -6,8 +6,7 @@ from app.core.config import Config
 from app.core.utils import extract_repo_name_from_url, get_local_repo_path, format_duration
 from app.core.exceptions import RepositoryError, IndexingError, RepositorySizeError
 
-from .github_service import GitHubService
-from .git_service import GitService
+from .github_service import GitHubService, GitService
 from .document_loader import DocumentLoader
 from .faiss_service import FAISSService
 from .embeddings import GeminiAPIEmbeddings

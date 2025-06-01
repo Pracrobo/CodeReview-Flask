@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from app.core.config import Config
-from app.core.utils import extract_repo_name_from_url, get_local_repo_path
+from app.core.utils import extract_repo_name_from_url, get_local_repo_path, get_repo_owner_and_name
 from app.core.exceptions import (
     RepositoryError,
     IndexingError,
@@ -32,14 +32,16 @@ class IndexingService:
         self.status_service = status_service
         self.indexer = RepositoryIndexer()
         self.callback_urls = {}  # repo_name -> callback_url 매핑
+        self.user_ids = {}  # repo_name -> user_id 매핑
         logger.info("IndexingService가 초기화되었습니다.")
 
-    def prepare_and_start_indexing(self, repo_url: str, callback_url: Optional[str] = None) -> Dict[str, Any]:
+    def prepare_and_start_indexing(self, repo_url: str, callback_url: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """인덱싱 준비 및 백그라운드 작업을 시작합니다.
         
         Args:
             repo_url: GitHub 저장소 URL
             callback_url: 분석 완료 시 콜백할 URL (선택사항)
+            user_id: 사용자 ID (선택사항)
             
         Returns:
             초기 상태 결과 딕셔너리
@@ -47,10 +49,16 @@ class IndexingService:
         repo_name = extract_repo_name_from_url(repo_url)
         logger.info(f"인덱싱 준비 시작: '{repo_name}' (URL: {repo_url})")
 
-        # 콜백 URL 저장
+        # 콜백 URL 저장 (owner/repo 형식으로 키 생성)
         if callback_url:
-            self.callback_urls[repo_name] = callback_url
-            logger.info(f"콜백 URL 저장: '{repo_name}' -> {callback_url}")
+            try:
+                owner, repo = get_repo_owner_and_name(repo_url)
+                full_repo_name = f"{owner}/{repo}"
+                self.callback_urls[full_repo_name] = callback_url
+                self.user_ids[full_repo_name] = user_id
+                logger.info(f"콜백 URL 등록: {full_repo_name} -> {callback_url}")
+            except Exception as e:
+                logger.warning(f"콜백 URL 등록 실패: {e}")
 
         initial_status_result = self.status_service.init_indexing_status(repo_url)
         current_status = initial_status_result.get("status")
@@ -125,24 +133,24 @@ class IndexingService:
             self._set_completion_status(repo_name, vector_stores)
             logger.info(f"인덱싱 성공적으로 완료: '{repo_name}'")
 
-            # Express로 완료 콜백 전송
-            self._send_completion_callback(repo_name, "completed")
+            # Express로 완료 콜백 전송 (owner/repo 형식으로)
+            self._send_completion_callback(repo_url, "completed")
 
         except RepositorySizeError as e:
             logger.error(f"저장소 크기 초과 오류 - '{repo_name}': {e}")
             self.status_service.set_error_status(repo_name, str(e), "REPO_SIZE_EXCEEDED")
-            self._send_completion_callback(repo_name, "failed", str(e))
+            self._send_completion_callback(repo_url, "failed", str(e))
         except (RepositoryError, IndexingError, EmbeddingError) as e:
             logger.error(f"인덱싱 오류 - '{repo_name}': {e}")
             error_code = self._get_error_code(e)
             self.status_service.set_error_status(repo_name, str(e), error_code)
-            self._send_completion_callback(repo_name, "failed", str(e))
+            self._send_completion_callback(repo_url, "failed", str(e))
         except Exception as e:
             logger.error(f"예상치 못한 인덱싱 오류 - '{repo_name}': {e}", exc_info=True)
             self.status_service.set_error_status(
                 repo_name, str(e), "UNEXPECTED_INDEXING_ERROR"
             )
-            self._send_completion_callback(repo_name, "failed", str(e))
+            self._send_completion_callback(repo_url, "failed", str(e))
 
     def _perform_indexing_with_progress(self, repo_url: str, repo_name: str) -> Dict[str, Any]:
         """진행 상황을 추적하면서 인덱싱을 수행합니다.
@@ -179,24 +187,33 @@ class IndexingService:
         
         return vector_stores
 
-    def _send_completion_callback(self, repo_name: str, status: str, error_message: Optional[str] = None) -> None:
+    def _send_completion_callback(self, repo_url: str, status: str, error_message: Optional[str] = None) -> None:
         """Express로 분석 완료 콜백을 전송합니다.
         
         Args:
-            repo_name: 저장소 이름
+            repo_url: 저장소 URL
             status: 완료 상태 ("completed" 또는 "failed")
             error_message: 오류 메시지 (실패 시)
         """
-        callback_url = self.callback_urls.get(repo_name)
-        if not callback_url:
-            logger.debug(f"콜백 URL이 없습니다: '{repo_name}'")
-            return
-
         try:
+            # owner/repo 형식으로 repo_name 생성
+            owner, repo = get_repo_owner_and_name(repo_url)
+            full_repo_name = f"{owner}/{repo}"
+            
+            callback_url = self.callback_urls.get(full_repo_name)
+            if not callback_url:
+                logger.debug(f"콜백 URL이 없습니다: '{full_repo_name}'")
+                return
+
             payload = {
-                "repo_name": repo_name,
+                "repo_name": full_repo_name,  # owner/repo 형식으로 전송
                 "status": status,
             }
+            
+            # 사용자 ID가 있으면 추가
+            user_id = self.user_ids.get(full_repo_name)
+            if user_id:
+                payload["user_id"] = user_id
             
             if error_message:
                 payload["error_message"] = error_message
@@ -206,20 +223,27 @@ class IndexingService:
             response = requests.post(
                 callback_url,
                 json=payload,
-                timeout=10,
+                timeout=30,
                 headers={"Content-Type": "application/json"}
             )
             
             if response.status_code == 200:
-                logger.info(f"콜백 전송 성공: '{repo_name}' -> {status}")
+                logger.info(f"콜백 전송 성공: '{full_repo_name}' -> {status}")
             else:
-                logger.warning(f"콜백 전송 실패: '{repo_name}' - HTTP {response.status_code}")
+                logger.warning(f"콜백 전송 실패: '{full_repo_name}' - HTTP {response.status_code}")
+                logger.warning(f"응답 내용: {response.text}")
                 
         except Exception as e:
-            logger.error(f"콜백 전송 중 오류: '{repo_name}' - {e}")
+            logger.error(f"콜백 전송 중 오류: '{repo_url}' - {e}")
         finally:
-            # 콜백 URL 정리
-            self.callback_urls.pop(repo_name, None)
+            # 콜백 URL과 사용자 ID 정리
+            try:
+                owner, repo = get_repo_owner_and_name(repo_url)
+                full_repo_name = f"{owner}/{repo}"
+                self.callback_urls.pop(full_repo_name, None)
+                self.user_ids.pop(full_repo_name, None)
+            except Exception:
+                pass
 
     def _update_progress(self, repo_name: str, message: str) -> None:
         """진행 상황을 업데이트합니다.

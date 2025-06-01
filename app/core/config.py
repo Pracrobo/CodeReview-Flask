@@ -38,7 +38,7 @@ class Config:
 
     # API 오류별 대기 시간 설정 (초 단위)
     QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
-    GENERAL_API_ERROR_SLEEP_TIME = 5  # 일반 API 오류 시 대기 시간
+    GENERAL_API_ERROR_SLEEP_TIME = 30  # 일반 API 오류 시 대기 시간
     SUCCESS_SLEEP_TIME = 60  # 성공적인 임베딩 후 대기 시간
 
     # 문서 파일 확장자
@@ -56,7 +56,7 @@ class Config:
     API_VERSION = "v1"
     MAX_REPOSITORIES = 100  # 최대 저장소 개수 제한
     REQUEST_TIMEOUT = 300  # 요청 타임아웃 (초)
-    MAX_REPO_SIZE_MB = 3  # 최대 저장소 크기 (MB)
+    MAX_REPO_SIZE_MB = 5  # 최대 저장소 크기 (MB)
 
 
 # 지원 언어, 확장자, Langchain Enum 매핑
