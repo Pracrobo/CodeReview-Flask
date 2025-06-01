@@ -1,12 +1,13 @@
 from flask import request
 from flask_restx import Resource, fields
 import logging
-import threading
 
 from . import api
 
-# 서비스, 예외, 유틸리티, 검증기 임포트 경로 수정
-from ..services.repository_service import RepositoryService
+from ..services.status_service import StatusService
+from ..services.indexing_service import IndexingService
+from ..services.search_service import SearchService
+
 from ..core.exceptions import ServiceError, ValidationError
 from ..core.response_utils import (
     success_response,
@@ -200,55 +201,56 @@ repository_ns = api.namespace("repository", description="저장소 인덱싱 및
 # 로거 설정
 logger = logging.getLogger(__name__)
 
-# Repository 서비스 인스턴스 생성
-try:
-    repo_service = RepositoryService()
-except Exception as e:
-    logger.error(f"RepositoryService 인스턴스 생성 실패: {e}", exc_info=True)
-    repo_service = None
+# 서비스 인스턴스 생성
+# StatusService는 싱글톤이므로 직접 인스턴스화
+status_service = StatusService()
+indexing_service = IndexingService(status_service=status_service)
+search_service = SearchService(status_service=status_service)
 
 
 @repository_ns.route("/index")
 class RepositoryIndex(Resource):
     @repository_ns.doc("index_repository")
     @repository_ns.expect(repo_index_request, validate=True)
-    @repository_ns.response(202, "인덱싱 작업 시작됨", progress_response)
-    @repository_ns.response(200, "이미 인덱싱 완료됨", success_response_with_data)
+    @repository_ns.response(202, "인덱싱 작업 시작됨/진행중", progress_response) # 메시지 수정
+    @repository_ns.response(200, "이미 인덱싱 완료됨", success_response_with_data) 
     @repository_ns.response(400, "잘못된 요청", error_model)
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
-        """저장소 인덱싱 요청. 요청 즉시 응답 후 백그라운드에서 인덱싱 진행."""
-        if not repo_service:
-            return error_response(message="RepositoryService가 로드되지 않았습니다.", error_code="SERVICE_UNAVAILABLE", status_code=503)
+        """저장소 인덱싱 요청. 상태에 따라 즉시 응답 또는 백그라운드 인덱싱 시작."""
         try:
             data = request.get_json(force=True)
             repo_url = validate_repo_url(data)
-            initial_status_result = repo_service.prepare_indexing(repo_url)
+            
+            # IndexingService의 메서드 호출
+            initial_status_result = indexing_service.prepare_and_start_indexing(repo_url)
+            repo_name = status_service._get_repo_name_from_url(repo_url) # repo_name 가져오기
+
             current_status = initial_status_result.get("status")
-            repo_name_from_result = initial_status_result.get("repo_name", "알 수 없는 저장소")
             is_new_request = initial_status_result.get("is_new_request", False)
 
-            if current_status == "indexing" or current_status == "pending":
-                if is_new_request:
-                    thread = threading.Thread(target=repo_service.perform_indexing, args=(repo_url,))
-                    thread.daemon = True
-                    thread.start()
-                    message = f"저장소 '{repo_name_from_result}' 인덱싱 작업이 시작되었습니다. 상태 API로 확인하세요."
-                else:
-                    message = f"저장소 '{repo_name_from_result}' 인덱싱 작업이 이미 진행 중입니다. 상태 API로 확인하세요."
-                return in_progress_response(progress_data=initial_status_result, message=message, status_code=202)
-            elif current_status == "completed":
-                return success_response(data=initial_status_result, message=f"저장소 '{repo_name_from_result}'은(는) 이미 성공적으로 인덱싱되었습니다.", status_code=200)
+            if current_status == "completed":
+                message = f"저장소 '{repo_name}'은(는) 이미 성공적으로 인덱싱되었습니다."
+                return success_response(data=initial_status_result, message=message, status_code=200)
+            
+            # is_new_request 가 True이면 (새로운 작업 시작) -> 202, 메시지: "작업 시작됨"
+            # is_new_request 가 False이고, current_status가 pending/indexing 이면 -> 202, 메시지: "이미 진행 중"
+            if is_new_request and (current_status == "pending" or current_status == "indexing") :
+                 message = f"저장소 '{repo_name}' 인덱싱 작업이 시작되었습니다. 상태 API로 확인하세요."
+            else: # 이미 존재하는 요청 (진행중이거나, 스레드 시작 대기중)
+                 message = f"저장소 '{repo_name}' 인덱싱 작업이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요."
+            
+            return in_progress_response(progress_data=initial_status_result, message=message, status_code=202)
+            
         except ValidationError as e:
-            logger.warning(f"입력 값 검증 오류: {e}")
+            logger.warning(f"입력 값 검증 오류 (index): {e}")
             return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
         except ServiceError as e:
-            logger.error(f"서비스 오류: {e}")
-            return error_response(message=str(e), error_code="SERVICE_ERROR", status_code=400)
+            logger.error(f"서비스 오류 (index): {e}")
+            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=400 if e.error_code else 500)
         except Exception as e:
-            logger.error(f"예상치 못한 오류: {e}", exc_info=True)
+            logger.error(f"예상치 못한 오류 (index): {e}", exc_info=True)
             return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500)
-
 
 @repository_ns.route("/search")
 class RepositorySearch(Resource):
@@ -256,53 +258,62 @@ class RepositorySearch(Resource):
     @repository_ns.expect(repo_search_request, validate=True)
     @repository_ns.response(200, "검색 완료", success_response_with_data)
     @repository_ns.response(400, "잘못된 요청", error_model)
+    @repository_ns.response(404, "인덱스 없음", error_model) # INDEX_NOT_FOUND 경우
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """저장소에서 코드 또는 문서 검색"""
-        if not repo_service:
-            return error_response(message="RepositoryService가 로드되지 않았습니다.", error_code="SERVICE_UNAVAILABLE", status_code=503)
         try:
             data = request.get_json()
             repo_name, query, search_type = validate_search_request(data)
-            repo_url = f"https://github.com/{repo_name}"
-            result = repo_service.search_repository(repo_url, query, search_type)
+            repo_url = f"https://github.com/{repo_name}" # Service에서 repo_name 대신 repo_url을 받도록 변경 고려
+            
+            # SearchService의 메서드 호출
+            result = search_service.search_repository(repo_url, query, search_type)
             return success_response(data=result, message="검색이 완료되었습니다.")
+            
         except ValidationError as e:
-            logger.warning(f"입력 값 검증 오류: {e}")
+            logger.warning(f"입력 값 검증 오류 (search): {e}")
             return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
         except ServiceError as e:
-            logger.error(f"서비스 오류: {e}")
-            return error_response(message=str(e), error_code="SERVICE_ERROR", status_code=400)
+            logger.error(f"서비스 오류 (search): {e} / Code: {e.error_code}")
+            if e.error_code == "INDEX_NOT_FOUND":
+                return error_response(message=str(e), error_code=e.error_code, status_code=404)
+            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500) # INDEX_LOAD_FAILED 등
         except Exception as e:
-            logger.error(f"예상치 못한 오류: {e}", exc_info=True)
+            logger.error(f"예상치 못한 오류 (search): {e}", exc_info=True)
             return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500)
-
 
 @repository_ns.route("/status/<path:repo_name>")
 class RepositoryStatus(Resource):
     @repository_ns.doc("get_repository_status")
     @repository_ns.param("repo_name", "저장소 이름 (owner/repository 형식)", required=True)
-    @repository_ns.response(200, "상태 조회 성공", success_response_with_data)
+    @repository_ns.response(200, "상태 조회 성공 (완료됨)", success_response_with_data) # 모델명 확인 필요 -> progress_response 또는 success_response_with_data
     @repository_ns.response(202, "인덱싱 진행 중", progress_response)
-    @repository_ns.response(404, "저장소를 찾을 수 없음", error_model)
-    @repository_ns.response(409, "인덱싱 실패", error_model)
+    @repository_ns.response(404, "저장소 정보 없음", error_model)
+    @repository_ns.response(409, "인덱싱 실패", error_model) # 상태가 failed인 경우
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def get(self, repo_name):
         """저장소 인덱싱 상태 확인"""
-        if not repo_service:
-            return error_response(message="RepositoryService가 로드되지 않았습니다.", error_code="SERVICE_UNAVAILABLE", status_code=503)
         try:
-            status_data_result = repo_service.get_repository_status(repo_name)
-            if status_data_result.get("status") == "not_indexed":
+            # StatusService의 메서드 호출
+            status_data_result = status_service.get_repository_status_data(repo_name)
+            current_status = status_data_result.get("status")
+
+            if current_status == "not_indexed":
                 return error_response(message=f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.", error_code="NOT_FOUND", status_code=404)
-            if status_data_result.get("status") == "indexing" or status_data_result.get("status") == "pending":
+            elif current_status == "failed":
+                return error_response(message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}", error_code=status_data_result.get("error_code", "INDEXING_FAILED"), status_code=409)
+            elif current_status == "pending" or current_status == "indexing":
                 return in_progress_response(progress_data=status_data_result, message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.", status_code=202)
-            if status_data_result.get("status") == "failed":
-                return error_response(message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}", error_code="INDEXING_FAILED", status_code=409)
-            return success_response(data=status_data_result)
-        except ServiceError as e:
-            logger.error(f"상태 조회 서비스 오류: {e}")
-            return error_response(message=str(e), error_code="SERVICE_ERROR", status_code=400)
+            elif current_status == "completed":
+                 return success_response(data=status_data_result, message=f"저장소 '{repo_name}' 인덱싱 상태입니다.") # progress_data 대신 status_data_result 전체를 data로 전달
+            else: # 예상치 못한 상태값
+                logger.error(f"Unknown status '{current_status}' for repo '{repo_name}'")
+                return error_response(message=f"알 수 없는 상태값({current_status})입니다.", error_code="UNKNOWN_STATUS", status_code=500)
+
+        except ServiceError as e: # StatusService 내부에서 발생할 수 있는 예외 (거의 없을 것으로 예상)
+            logger.error(f"서비스 오류 (status): {e}")
+            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
         except Exception as e:
-            logger.error(f"상태 조회 중 예상치 못한 오류: {e}", exc_info=True)
+            logger.error(f"예상치 못한 오류 (status): {e}", exc_info=True)
             return error_response(message="상태 조회 중 서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 

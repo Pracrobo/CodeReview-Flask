@@ -12,14 +12,15 @@ faiss.omp_set_num_threads(1)
 logger = logging.getLogger(__name__)
 
 # Gemini 클라이언트 초기화
-# API 키 로드 실패 시 앱 로딩 단계에서 알 수 있도록 try-except 추가 고려
 try:
-    client = genai.Client(api_key=Config.GEMINI_API_KEY1) 
-    # GEMINI_API_KEY1이 없을 경우를 대비하여 KEY2도 사용하거나, 설정에서 하나의 키만 사용하도록 통일 필요.
-    # 혹은 Config.GEMINI_API_KEY (선택된 키) 와 같이 사용하는 것을 권장.
+    api_key_to_use = Config.GEMINI_API_KEY1
+    logger.info(f"Attempting to initialize Gemini Client with API Key: '{api_key_to_use}'")
+    if not api_key_to_use:
+        raise ValueError("GEMINI_API_KEY1 is not set.")
+    client = genai.Client(api_key=api_key_to_use)
 except Exception as e:
-    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. GEMINI_API_KEY1 설정을 확인하세요.")
-    client = None # 또는 raise AppException("Gemini API 키 설정 오류") 등으로 처리
+    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. GEMINI_API_KEY1 설정을 확인하세요.", exc_info=True)
+    client = None
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""

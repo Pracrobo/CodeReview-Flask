@@ -1,10 +1,22 @@
+import os
 from app import create_app
 
-app = create_app()
+def main():
+    """메인 실행 함수"""
+    app = create_app()
+    
+    # 환경변수에서 설정 읽기
+    host = os.getenv('FLASK_HOST', '127.0.0.1')
+    port = int(os.getenv('FLASK_PORT', 3002))
+    debug = os.getenv('FLASK_DEBUG', 'true').lower() in ('true', '1', 'yes', 'on')
+    
+    print(f"Flask 애플리케이션 시작:")
+    print(f"  - Host: {host}")
+    print(f"  - Port: {port}")
+    print(f"  - Debug: {debug}")
+    print(f"  - Swagger UI: http://{host}:{port}/api/docs/")
+    
+    app.run(host=host, port=port, debug=debug)
 
 if __name__ == '__main__':
-    # host, port, debug 설정은 config 파일 또는 환경변수에서 관리하는 것이 좋습니다.
-    # 예: app.run(host=app.config.get('HOST', '0.0.0.0'), 
-    #             port=app.config.get('PORT', 5000), 
-    #             debug=app.config.get('DEBUG', False))
-    app.run(debug=True) # 개발 중에는 True로 설정 
+    main() 
