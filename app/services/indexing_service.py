@@ -1,7 +1,8 @@
 import logging
 import threading
+import requests
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.core.config import Config
 from app.core.utils import extract_repo_name_from_url, get_local_repo_path
@@ -30,19 +31,26 @@ class IndexingService:
         """
         self.status_service = status_service
         self.indexer = RepositoryIndexer()
+        self.callback_urls = {}  # repo_name -> callback_url 매핑
         logger.info("IndexingService가 초기화되었습니다.")
 
-    def prepare_and_start_indexing(self, repo_url: str) -> Dict[str, Any]:
+    def prepare_and_start_indexing(self, repo_url: str, callback_url: Optional[str] = None) -> Dict[str, Any]:
         """인덱싱 준비 및 백그라운드 작업을 시작합니다.
         
         Args:
             repo_url: GitHub 저장소 URL
+            callback_url: 분석 완료 시 콜백할 URL (선택사항)
             
         Returns:
             초기 상태 결과 딕셔너리
         """
         repo_name = extract_repo_name_from_url(repo_url)
         logger.info(f"인덱싱 준비 시작: '{repo_name}' (URL: {repo_url})")
+
+        # 콜백 URL 저장
+        if callback_url:
+            self.callback_urls[repo_name] = callback_url
+            logger.info(f"콜백 URL 저장: '{repo_name}' -> {callback_url}")
 
         initial_status_result = self.status_service.init_indexing_status(repo_url)
         current_status = initial_status_result.get("status")
@@ -117,18 +125,66 @@ class IndexingService:
             self._set_completion_status(repo_name, vector_stores)
             logger.info(f"인덱싱 성공적으로 완료: '{repo_name}'")
 
+            # Express로 완료 콜백 전송
+            self._send_completion_callback(repo_name, "completed")
+
         except RepositorySizeError as e:
             logger.error(f"저장소 크기 초과 오류 - '{repo_name}': {e}")
             self.status_service.set_error_status(repo_name, str(e), "REPO_SIZE_EXCEEDED")
+            self._send_completion_callback(repo_name, "failed", str(e))
         except (RepositoryError, IndexingError, EmbeddingError) as e:
             logger.error(f"인덱싱 오류 - '{repo_name}': {e}")
             error_code = self._get_error_code(e)
             self.status_service.set_error_status(repo_name, str(e), error_code)
+            self._send_completion_callback(repo_name, "failed", str(e))
         except Exception as e:
             logger.error(f"예상치 못한 인덱싱 오류 - '{repo_name}': {e}", exc_info=True)
             self.status_service.set_error_status(
                 repo_name, str(e), "UNEXPECTED_INDEXING_ERROR"
             )
+            self._send_completion_callback(repo_name, "failed", str(e))
+
+    def _send_completion_callback(self, repo_name: str, status: str, error_message: Optional[str] = None) -> None:
+        """Express로 분석 완료 콜백을 전송합니다.
+        
+        Args:
+            repo_name: 저장소 이름
+            status: 완료 상태 ("completed" 또는 "failed")
+            error_message: 오류 메시지 (실패 시)
+        """
+        callback_url = self.callback_urls.get(repo_name)
+        if not callback_url:
+            logger.debug(f"콜백 URL이 없습니다: '{repo_name}'")
+            return
+
+        try:
+            payload = {
+                "repo_name": repo_name,
+                "status": status,
+            }
+            
+            if error_message:
+                payload["error_message"] = error_message
+
+            logger.info(f"Express로 완료 콜백 전송: {callback_url} - {payload}")
+            
+            response = requests.post(
+                callback_url,
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"콜백 전송 성공: '{repo_name}' -> {status}")
+            else:
+                logger.warning(f"콜백 전송 실패: '{repo_name}' - HTTP {response.status_code}")
+                
+        except Exception as e:
+            logger.error(f"콜백 전송 중 오류: '{repo_name}' - {e}")
+        finally:
+            # 콜백 URL 정리
+            self.callback_urls.pop(repo_name, None)
 
     def _update_progress(self, repo_name: str, message: str) -> None:
         """진행 상황을 업데이트합니다.

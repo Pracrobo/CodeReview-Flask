@@ -56,6 +56,24 @@ repo_index_request = api.model(
             required=True,
             description="GitHub 저장소 URL",
             example="https://github.com/pallets/flask",
+        ),
+        "repository_info": fields.Raw(
+            required=False,
+            description="Express에서 전달한 저장소 정보",
+            example={
+                "githubRepoId": 123456,
+                "fullName": "pallets/flask",
+                "name": "flask",
+                "description": "A lightweight WSGI web application framework",
+                "programmingLanguage": "Python",
+                "star": 65000,
+                "fork": 16000
+            }
+        ),
+        "callback_url": fields.String(
+            required=False,
+            description="분석 완료 시 콜백할 Express API URL",
+            example="http://localhost:3001/api/internal/analysis-complete"
         )
     },
 )
@@ -212,35 +230,53 @@ search_service = SearchService(status_service=status_service)
 class RepositoryIndex(Resource):
     @repository_ns.doc("index_repository")
     @repository_ns.expect(repo_index_request, validate=True)
-    @repository_ns.response(202, "인덱싱 작업 시작됨/진행중", progress_response) # 메시지 수정
+    @repository_ns.response(202, "인덱싱 작업 시작됨/진행중", progress_response)
     @repository_ns.response(200, "이미 인덱싱 완료됨", success_response_with_data) 
     @repository_ns.response(400, "잘못된 요청", error_model)
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
-        """저장소 인덱싱 요청. 상태에 따라 즉시 응답 또는 백그라운드 인덱싱 시작."""
+        """저장소 인덱싱 요청. Express에서 호출되는 API."""
         try:
             data = request.get_json(force=True)
             repo_url = validate_repo_url(data)
+            repository_info = data.get('repository_info', {})
+            callback_url = data.get('callback_url')
             
-            # IndexingService의 메서드 호출
-            initial_status_result = indexing_service.prepare_and_start_indexing(repo_url)
-            repo_name = status_service._get_repo_name_from_url(repo_url) # repo_name 가져오기
+            logger.info(f"Express에서 인덱싱 요청 받음: {repo_url}")
+            if repository_info:
+                logger.info(f"저장소 정보: {repository_info.get('fullName', 'N/A')}")
+            if callback_url:
+                logger.info(f"콜백 URL: {callback_url}")
+            
+            # IndexingService의 메서드 호출 (callback_url 전달)
+            initial_status_result = indexing_service.prepare_and_start_indexing(repo_url, callback_url)
+            repo_name = status_service._get_repo_name_from_url(repo_url)
 
             current_status = initial_status_result.get("status")
             is_new_request = initial_status_result.get("is_new_request", False)
 
+            # Express가 기대하는 응답 형식으로 변환
+            response_data = {
+                "analysis_id": repo_name,  # Flask에서 사용하는 분석 ID
+                "repo_name": repo_name,
+                "status": current_status,
+                "progress": initial_status_result.get("progress", 0),
+                "message": initial_status_result.get("progress_message", ""),
+                "started_at": initial_status_result.get("start_time"),
+                "estimated_completion": initial_status_result.get("end_time"),
+            }
+
             if current_status == "completed":
                 message = f"저장소 '{repo_name}'은(는) 이미 성공적으로 인덱싱되었습니다."
-                return success_response(data=initial_status_result, message=message, status_code=200)
+                return success_response(data=response_data, message=message, status_code=200)
             
-            # is_new_request 가 True이면 (새로운 작업 시작) -> 202, 메시지: "작업 시작됨"
-            # is_new_request 가 False이고, current_status가 pending/indexing 이면 -> 202, 메시지: "이미 진행 중"
-            if is_new_request and (current_status == "pending" or current_status == "indexing") :
-                 message = f"저장소 '{repo_name}' 인덱싱 작업이 시작되었습니다. 상태 API로 확인하세요."
-            else: # 이미 존재하는 요청 (진행중이거나, 스레드 시작 대기중)
-                 message = f"저장소 '{repo_name}' 인덱싱 작업이 이미 진행 중이거나 대기 중입니다. 상태 API로 확인하세요."
+            # 새로운 요청이거나 진행 중인 요청 처리
+            if is_new_request and (current_status in ["pending", "indexing"]):
+                message = f"저장소 '{repo_name}' 인덱싱 작업이 시작되었습니다."
+            else:
+                message = f"저장소 '{repo_name}' 인덱싱 작업이 이미 진행 중입니다."
             
-            return in_progress_response(progress_data=initial_status_result, message=message, status_code=202)
+            return success_response(data=response_data, message=message, status_code=202)
             
         except ValidationError as e:
             logger.warning(f"입력 값 검증 오류 (index): {e}")
@@ -287,31 +323,67 @@ class RepositorySearch(Resource):
 class RepositoryStatus(Resource):
     @repository_ns.doc("get_repository_status")
     @repository_ns.param("repo_name", "저장소 이름 (owner/repository 형식)", required=True)
-    @repository_ns.response(200, "상태 조회 성공 (완료됨)", success_response_with_data) # 모델명 확인 필요 -> progress_response 또는 success_response_with_data
+    @repository_ns.response(200, "상태 조회 성공 (완료됨)", success_response_with_data)
     @repository_ns.response(202, "인덱싱 진행 중", progress_response)
     @repository_ns.response(404, "저장소 정보 없음", error_model)
-    @repository_ns.response(409, "인덱싱 실패", error_model) # 상태가 failed인 경우
+    @repository_ns.response(409, "인덱싱 실패", error_model)
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def get(self, repo_name):
-        """저장소 인덱싱 상태 확인"""
+        """저장소 인덱싱 상태 확인. Express에서 호출되는 API."""
         try:
+            logger.info(f"Express에서 상태 조회 요청: {repo_name}")
+            
             # StatusService의 메서드 호출
             status_data_result = status_service.get_repository_status_data(repo_name)
             current_status = status_data_result.get("status")
 
-            if current_status == "not_indexed":
-                return error_response(message=f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.", error_code="NOT_FOUND", status_code=404)
-            elif current_status == "failed":
-                return error_response(message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}", error_code=status_data_result.get("error_code", "INDEXING_FAILED"), status_code=409)
-            elif current_status == "pending" or current_status == "indexing":
-                return in_progress_response(progress_data=status_data_result, message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.", status_code=202)
-            elif current_status == "completed":
-                 return success_response(data=status_data_result, message=f"저장소 '{repo_name}' 인덱싱 상태입니다.") # progress_data 대신 status_data_result 전체를 data로 전달
-            else: # 예상치 못한 상태값
-                logger.error(f"Unknown status '{current_status}' for repo '{repo_name}'")
-                return error_response(message=f"알 수 없는 상태값({current_status})입니다.", error_code="UNKNOWN_STATUS", status_code=500)
+            # Express가 기대하는 응답 형식으로 변환
+            response_data = {
+                "analysis_id": repo_name,
+                "repo_name": repo_name,
+                "status": current_status,
+                "progress": status_data_result.get("progress", 0),
+                "message": status_data_result.get("progress_message", ""),
+                "current_step": status_data_result.get("progress_message", ""),
+                "error": status_data_result.get("error"),
+                "error_code": status_data_result.get("error_code"),
+                "started_at": status_data_result.get("start_time"),
+                "completed_at": status_data_result.get("completion_time"),
+                "estimated_completion": status_data_result.get("end_time"),
+            }
 
-        except ServiceError as e: # StatusService 내부에서 발생할 수 있는 예외 (거의 없을 것으로 예상)
+            if current_status == "not_indexed":
+                return error_response(
+                    message=f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.", 
+                    error_code="NOT_FOUND", 
+                    status_code=404
+                )
+            elif current_status == "failed":
+                return error_response(
+                    message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}", 
+                    error_code=status_data_result.get("error_code", "INDEXING_FAILED"), 
+                    status_code=409
+                )
+            elif current_status in ["pending", "indexing"]:
+                return success_response(
+                    data=response_data, 
+                    message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.", 
+                    status_code=202
+                )
+            elif current_status == "completed":
+                return success_response(
+                    data=response_data, 
+                    message=f"저장소 '{repo_name}' 인덱싱이 완료되었습니다."
+                )
+            else:
+                logger.error(f"Unknown status '{current_status}' for repo '{repo_name}'")
+                return error_response(
+                    message=f"알 수 없는 상태값({current_status})입니다.", 
+                    error_code="UNKNOWN_STATUS", 
+                    status_code=500
+                )
+
+        except ServiceError as e:
             logger.error(f"서비스 오류 (status): {e}")
             return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
         except Exception as e:
