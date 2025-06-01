@@ -9,7 +9,6 @@ load_dotenv(dotenv_path=env_path)
 
 # .env 파일에서 환경 변수 직접 로드
 env_vars = dotenv_values(dotenv_path=env_path)
-print(env_vars)
 
 
 class Config:

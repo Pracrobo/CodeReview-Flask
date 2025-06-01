@@ -7,6 +7,7 @@ from . import api
 from ..services.status_service import StatusService
 from ..services.indexing_service import IndexingService
 from ..services.search_service import SearchService
+from ..services.readme_summarizer import ReadmeSummarizer
 
 from ..core.exceptions import ServiceError, ValidationError
 from ..core.response_utils import (
@@ -222,8 +223,9 @@ logger = logging.getLogger(__name__)
 # 서비스 인스턴스 생성
 # StatusService는 싱글톤이므로 직접 인스턴스화
 status_service = StatusService()
-indexing_service = IndexingService(status_service=status_service)
-search_service = SearchService(status_service=status_service)
+indexing_service = IndexingService(status_service)
+search_service = SearchService(status_service)
+readme_summarizer = ReadmeSummarizer()
 
 
 @repository_ns.route("/index")
@@ -390,3 +392,96 @@ class RepositoryStatus(Resource):
         except Exception as e:
             logger.error(f"예상치 못한 오류 (status): {e}", exc_info=True)
             return error_response(message="상태 조회 중 서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 
+
+# README 요약 요청 모델
+readme_summary_request = api.model(
+    "ReadmeSummaryRequest",
+    {
+        "repo_name": fields.String(required=True, description="저장소 이름 (owner/repo)", example="facebook/react"),
+        "readme_content": fields.String(required=True, description="README 파일 내용"),
+    },
+)
+
+# README 요약 응답 모델
+readme_summary_response = api.model(
+    "ReadmeSummaryResponse",
+    {
+        "status": fields.String(required=True, description="응답 상태", example="success"),
+        "message": fields.String(required=True, description="응답 메시지"),
+        "data": fields.Raw(description="요약 결과 데이터"),
+        "timestamp": fields.String(required=True, description="응답 시간 (ISO 8601)"),
+    },
+)
+
+@repository_ns.route("/summarize-readme")
+class ReadmeSummary(Resource):
+    @repository_ns.doc("summarize_readme")
+    @repository_ns.expect(readme_summary_request, validate=True)
+    @repository_ns.response(200, "README 요약 완료", readme_summary_response)
+    @repository_ns.response(400, "잘못된 요청", error_model)
+    @repository_ns.response(500, "서버 내부 오류", error_model)
+    def post(self):
+        """README 내용을 AI로 요약합니다. Express에서 호출되는 API."""
+        try:
+            data = request.get_json()
+            
+            # 입력 데이터 검증
+            if not data:
+                return error_response(message="요청 데이터가 필요합니다.", error_code="MISSING_DATA", status_code=400)
+            
+            repo_name = data.get("repo_name")
+            readme_content = data.get("readme_content")
+            
+            if not repo_name:
+                return error_response(message="저장소 이름이 필요합니다.", error_code="MISSING_REPO_NAME", status_code=400)
+            
+            if not readme_content:
+                return error_response(message="README 내용이 필요합니다.", error_code="MISSING_README_CONTENT", status_code=400)
+            
+            logger.info(f"README 요약 요청 받음: {repo_name}")
+            
+            # README 요약 수행
+            summary = readme_summarizer.summarize_readme(repo_name, readme_content)
+            
+            if summary:
+                response_data = {
+                    "repo_name": repo_name,
+                    "summary": summary,
+                    "original_length": len(readme_content),
+                    "summary_length": len(summary),
+                }
+                
+                logger.info(f"README 요약 완료: {repo_name}")
+                return success_response(
+                    data=response_data,
+                    message=f"README 요약이 완료되었습니다: {repo_name}",
+                    status_code=200
+                )
+            else:
+                # 요약 실패 시 기본 설명 생성
+                fallback_description = readme_summarizer.create_fallback_description(repo_name)
+                
+                response_data = {
+                    "repo_name": repo_name,
+                    "summary": fallback_description,
+                    "original_length": len(readme_content),
+                    "summary_length": len(fallback_description),
+                    "is_fallback": True,
+                }
+                
+                logger.warning(f"README 요약 실패, 기본 설명 사용: {repo_name}")
+                return success_response(
+                    data=response_data,
+                    message=f"README 요약에 실패하여 기본 설명을 생성했습니다: {repo_name}",
+                    status_code=200
+                )
+                
+        except ValidationError as e:
+            logger.warning(f"입력 값 검증 오류 (summarize-readme): {e}")
+            return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
+        except ServiceError as e:
+            logger.error(f"서비스 오류 (summarize-readme): {e}")
+            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
+        except Exception as e:
+            logger.error(f"예상치 못한 오류 (summarize-readme): {e}", exc_info=True)
+            return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 
