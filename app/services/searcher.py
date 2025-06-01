@@ -15,11 +15,16 @@ logger = logging.getLogger(__name__)
 try:
     api_key_to_use = Config.GEMINI_API_KEY1
     logger.info(f"Attempting to initialize Gemini Client with API Key: '{api_key_to_use}'")
-    if not api_key_to_use:
-        raise ValueError("GEMINI_API_KEY1 is not set.")
-    client = genai.Client(api_key=api_key_to_use)
+    
+    # API 키가 dummy 값인지 확인
+    if not api_key_to_use or api_key_to_use == "dummy_key_1":
+        logger.warning("GEMINI_API_KEY1이 설정되지 않았거나 dummy 값입니다. 클라이언트를 None으로 설정합니다.")
+        client = None
+    else:
+        client = genai.Client(api_key=api_key_to_use)
+        logger.info("Gemini 클라이언트 초기화 성공")
 except Exception as e:
-    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. GEMINI_API_KEY1 설정을 확인하세요.", exc_info=True)
+    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. API 키 설정을 확인하세요.")
     client = None
 
 def translate_code_query_to_english(korean_text, llm_model_name):

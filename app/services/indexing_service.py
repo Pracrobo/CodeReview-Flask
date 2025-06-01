@@ -115,13 +115,13 @@ class IndexingService:
         logger.info(f"백그라운드 인덱싱 시작: '{repo_name}' (경로: {local_repo_path})")
 
         try:
-            # 진행 상황 업데이트
+            # 1. 저장소 정보 확인 단계
             self._update_progress(repo_name, "저장소 정보 확인 및 복제/로드 중...")
 
-            # 실제 인덱싱 수행
-            vector_stores = self.indexer.create_indexes_from_repository(repo_url)
+            # 2. 실제 인덱싱 수행 (단계별 진행 상황 추적)
+            vector_stores = self._perform_indexing_with_progress(repo_url, repo_name)
 
-            # 완료 상태 업데이트
+            # 3. 완료 상태 업데이트
             self._set_completion_status(repo_name, vector_stores)
             logger.info(f"인덱싱 성공적으로 완료: '{repo_name}'")
 
@@ -143,6 +143,41 @@ class IndexingService:
                 repo_name, str(e), "UNEXPECTED_INDEXING_ERROR"
             )
             self._send_completion_callback(repo_name, "failed", str(e))
+
+    def _perform_indexing_with_progress(self, repo_url: str, repo_name: str) -> Dict[str, Any]:
+        """진행 상황을 추적하면서 인덱싱을 수행합니다.
+        
+        Args:
+            repo_url: 저장소 URL
+            repo_name: 저장소 이름
+            
+        Returns:
+            생성된 벡터 스토어들
+        """
+        # 저장소 정보 확인 및 복제
+        self._update_progress(repo_name, "저장소 정보 확인 중...")
+        
+        # 실제 인덱서 호출 전에 각 단계별 콜백 설정
+        def progress_callback(stage: str, message: str):
+            """인덱싱 진행 상황 콜백"""
+            if "저장소 복제" in message or "저장소를 복제" in message:
+                self._update_progress(repo_name, "저장소 복제/로드 중...")
+            elif "코드 인덱싱" in message or "코드 파일" in message:
+                self._update_progress(repo_name, "코드 파일 로드 및 분할 중...")
+            elif "code FAISS 인덱스 생성" in message:
+                self._update_progress(repo_name, "코드 임베딩 생성 중...")
+            elif "문서 인덱싱" in message or "문서 파일" in message:
+                self._update_progress(repo_name, "문서 파일 로드 및 분할 중...")
+            elif "document FAISS 인덱스 생성" in message:
+                self._update_progress(repo_name, "문서 임베딩 생성 중...")
+        
+        # 인덱서에 콜백 전달하여 실행
+        vector_stores = self.indexer.create_indexes_from_repository(
+            repo_url, 
+            progress_callback=progress_callback
+        )
+        
+        return vector_stores
 
     def _send_completion_callback(self, repo_name: str, status: str, error_message: Optional[str] = None) -> None:
         """Express로 분석 완료 콜백을 전송합니다.

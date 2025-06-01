@@ -119,15 +119,57 @@ class FAISSService:
             EmbeddingError: 임베딩 생성 실패
         """
         try:
+            logger.info(f"총 {len(documents)}개 문서의 임베딩 생성을 시작합니다...")
             document_contents = [doc.page_content for doc in documents]
-            return self.embeddings.embed_documents(document_contents)
+            
+            # 임베딩 생성 시도
+            embeddings_result = self.embeddings.embed_documents(document_contents)
+            
+            if isinstance(embeddings_result, tuple) and len(embeddings_result) == 2:
+                embeddings_data, failed_indices = embeddings_result
+                logger.info(f"임베딩 생성 완료: 성공 {len(embeddings_data)}개, 실패 {len(failed_indices)}개")
+                return embeddings_data, failed_indices
+            else:
+                # 예상치 못한 반환 형식
+                logger.error(f"예상치 못한 임베딩 결과 형식: {type(embeddings_result)}")
+                raise EmbeddingError("임베딩 결과 형식이 올바르지 않습니다.")
             
         except EmbeddingError as e:
+            # EmbeddingError는 이미 상세한 메시지를 포함하고 있음
             logger.error(f"문서 임베딩 생성 중 오류: {e}")
-            raise
+            
+            # 에러 메시지에 해결 방법이 포함되어 있는지 확인
+            error_message = str(e)
+            if "해결 방법:" not in error_message:
+                # 기본 해결 방법 추가
+                error_message += "\n\n추가 해결 방법:\n"
+                error_message += "1. Flask 서버를 재시작해보세요.\n"
+                error_message += "2. .env 파일의 API 키가 올바른지 확인하세요.\n"
+                error_message += "3. 네트워크 연결을 확인하세요."
+            
+            raise EmbeddingError(error_message) from e
+            
         except Exception as e:
             logger.error(f"예상치 못한 임베딩 오류: {e}", exc_info=True)
-            raise EmbeddingError(f"임베딩 생성 실패: {e}") from e
+            
+            # 일반적인 오류에 대한 상세한 메시지 구성
+            error_details = [
+                f"임베딩 생성 중 예상치 못한 오류가 발생했습니다: {e}",
+                "",
+                "가능한 원인:",
+                "1. 네트워크 연결 문제",
+                "2. Gemini API 서비스 장애",
+                "3. API 키 권한 문제",
+                "4. 요청 데이터 형식 문제",
+                "",
+                "해결 방법:",
+                "1. 네트워크 연결을 확인하세요.",
+                "2. 잠시 후 다시 시도하세요.",
+                "3. API 키가 유효하고 권한이 있는지 확인하세요.",
+                "4. 문제가 지속되면 로그를 확인하세요."
+            ]
+            
+            raise EmbeddingError("\n".join(error_details)) from e
     
     def _filter_successful_documents(
         self, 

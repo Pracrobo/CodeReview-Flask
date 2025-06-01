@@ -1,6 +1,6 @@
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 
 from app.core.config import Config
@@ -33,6 +33,18 @@ class StatusService:
             self.repository_status: Dict[str, Dict[str, Any]] = {}
             self._status_data_lock = threading.Lock()
             self._initialized = True
+            
+            # 진행률 매핑 정의
+            self.progress_mapping = {
+                "저장소 정보 확인": 5,
+                "저장소 복제": 10,
+                "코드 파일 로드": 20,
+                "코드 임베딩": 50,
+                "문서 파일 로드": 70,
+                "문서 임베딩": 90,
+                "완료": 100
+            }
+            
             logger.info("StatusService가 싱글톤으로 초기화되었습니다.")
 
     def get_repository_status_data(self, repo_name: str) -> Dict[str, Any]:
@@ -48,7 +60,11 @@ class StatusService:
             if repo_name not in self.repository_status:
                 return self._check_existing_indexes(repo_name)
             
-            return self.repository_status[repo_name].copy()
+            # 진행률과 예상 시간 업데이트
+            status_data = self.repository_status[repo_name].copy()
+            self._update_progress_and_eta(status_data)
+            
+            return status_data
 
     def _check_existing_indexes(self, repo_name: str) -> Dict[str, Any]:
         """기존 인덱스 파일 존재 여부를 확인합니다.
@@ -68,14 +84,18 @@ class StatusService:
                 "repo_name": repo_name,
                 "code_index_status": "completed" if code_exists else "not_found",
                 "document_index_status": "completed" if doc_exists else "not_found",
+                "progress": 100,
                 "progress_message": "인덱스 파일이 존재합니다 (상세 기록 없음)",
                 "last_updated_time": self._get_current_timestamp(),
+                "estimated_completion": None,
             }
         else:
             return {
                 "status": "not_indexed",
                 "repo_name": repo_name,
+                "progress": 0,
                 "progress_message": "인덱싱된 정보가 없습니다.",
+                "estimated_completion": None,
             }
 
     def update_repository_status(self, repo_name: str, status_info: Dict[str, Any]) -> None:
@@ -92,8 +112,97 @@ class StatusService:
                 self.repository_status[repo_name].update(status_info)
             else:
                 self.repository_status[repo_name] = status_info
-                
+            
+            # 진행률 자동 계산
+            self._calculate_progress(repo_name)
+            
             logger.debug(f"상태 업데이트 완료 - '{repo_name}': {status_info.get('status')}")
+
+    def _calculate_progress(self, repo_name: str) -> None:
+        """현재 단계에 따른 진행률을 계산합니다.
+        
+        Args:
+            repo_name: 저장소 이름
+        """
+        if repo_name not in self.repository_status:
+            return
+            
+        status_data = self.repository_status[repo_name]
+        progress_message = status_data.get("progress_message", "")
+        
+        # 진행률 계산
+        calculated_progress = 0
+        
+        if "저장소 정보 확인" in progress_message or "저장소 복제" in progress_message:
+            calculated_progress = self.progress_mapping["저장소 정보 확인"]
+        elif "저장소를 복제" in progress_message or "저장소 복제/로드" in progress_message:
+            calculated_progress = self.progress_mapping["저장소 복제"]
+        elif "코드 인덱싱" in progress_message or "코드 파일" in progress_message:
+            calculated_progress = self.progress_mapping["코드 파일 로드"]
+        elif "code FAISS 인덱스 생성" in progress_message or "임베딩 시작" in progress_message:
+            calculated_progress = self.progress_mapping["코드 임베딩"]
+        elif "문서 인덱싱" in progress_message or "문서 파일" in progress_message:
+            calculated_progress = self.progress_mapping["문서 파일 로드"]
+        elif "document FAISS 인덱스 생성" in progress_message:
+            calculated_progress = self.progress_mapping["문서 임베딩"]
+        elif status_data.get("status") == "completed":
+            calculated_progress = self.progress_mapping["완료"]
+        
+        # 진행률이 이전보다 높을 때만 업데이트 (역행 방지)
+        current_progress = status_data.get("progress", 0)
+        if calculated_progress > current_progress:
+            status_data["progress"] = calculated_progress
+
+    def _update_progress_and_eta(self, status_data: Dict[str, Any]) -> None:
+        """진행률과 예상 완료 시간을 업데이트합니다.
+        
+        Args:
+            status_data: 상태 데이터
+        """
+        if status_data.get("status") not in ["indexing", "pending"]:
+            return
+            
+        start_time_str = status_data.get("start_time")
+        if not start_time_str:
+            return
+            
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+            current_time = datetime.now(timezone.utc)
+            elapsed_seconds = (current_time - start_time).total_seconds()
+            
+            current_progress = status_data.get("progress", 0)
+            
+            if current_progress > 0 and current_progress < 100:
+                # 예상 총 시간 계산 (현재 진행률 기준)
+                estimated_total_seconds = (elapsed_seconds / current_progress) * 100
+                remaining_seconds = estimated_total_seconds - elapsed_seconds
+                
+                if remaining_seconds > 0:
+                    estimated_completion = current_time + timedelta(seconds=remaining_seconds)
+                    status_data["estimated_completion"] = estimated_completion.isoformat()
+                    
+                    # 남은 시간을 사람이 읽기 쉬운 형태로 변환
+                    if remaining_seconds < 60:
+                        eta_text = f"약 {int(remaining_seconds)}초 남음"
+                    elif remaining_seconds < 3600:
+                        eta_text = f"약 {int(remaining_seconds/60)}분 남음"
+                    else:
+                        hours = int(remaining_seconds / 3600)
+                        minutes = int((remaining_seconds % 3600) / 60)
+                        eta_text = f"약 {hours}시간 {minutes}분 남음"
+                        
+                    status_data["eta_text"] = eta_text
+                else:
+                    status_data["eta_text"] = "곧 완료"
+            elif current_progress >= 100:
+                status_data["eta_text"] = "완료"
+            else:
+                status_data["eta_text"] = "계산 중..."
+                
+        except Exception as e:
+            logger.warning(f"예상 시간 계산 오류: {e}")
+            status_data["eta_text"] = "계산 중..."
 
     def init_indexing_status(self, repo_url: str) -> Dict[str, Any]:
         """인덱싱 시작 시 초기 상태를 설정합니다.
@@ -110,6 +219,7 @@ class StatusService:
             if repo_name in self.repository_status:
                 current_data = self.repository_status[repo_name].copy()
                 current_data["is_new_request"] = False
+                self._update_progress_and_eta(current_data)
                 return current_data
             
             current_time = self._get_current_timestamp()
@@ -124,7 +234,10 @@ class StatusService:
                 "error_code": None,
                 "code_index_status": "pending",
                 "document_index_status": "pending",
+                "progress": 0,
                 "progress_message": "인덱싱 작업 시작 대기 중...",
+                "estimated_completion": None,
+                "eta_text": "계산 중...",
                 "is_new_request": True,
             }
             
@@ -155,9 +268,11 @@ class StatusService:
                 "last_updated_time": current_time,
                 "error": error_msg,
                 "error_code": error_code,
+                "progress": 0,
                 "progress_message": f"인덱싱 실패: {error_msg}",
                 "code_index_status": self._get_failed_status(current_status.get("code_index_status")),
                 "document_index_status": self._get_failed_status(current_status.get("document_index_status")),
+                "eta_text": "실패",
             }
             
             self.repository_status[repo_name].update(error_update)

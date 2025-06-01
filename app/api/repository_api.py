@@ -349,7 +349,8 @@ class RepositoryStatus(Resource):
                 "error_code": status_data_result.get("error_code"),
                 "started_at": status_data_result.get("start_time"),
                 "completed_at": status_data_result.get("completion_time"),
-                "estimated_completion": status_data_result.get("end_time"),
+                "estimated_completion": status_data_result.get("estimated_completion"),
+                "eta_text": status_data_result.get("eta_text", "계산 중..."),
             }
 
             if current_status == "not_indexed":
