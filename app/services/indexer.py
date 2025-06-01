@@ -9,25 +9,21 @@ from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-# FAISS CPU 전용 설정
 import faiss
 
-from config import Config, LANGUAGE_TO_DETAILS
-from .embeddings import GeminiAPIEmbeddings
-from common.exceptions import (
+# 수정: config 및 예외 클래스 임포트 경로 변경
+from app.core.config import Config, LANGUAGE_TO_DETAILS
+from .embeddings import GeminiAPIEmbeddings # 같은 services 폴더 내 embeddings.py
+from app.core.exceptions import (
     RepositoryError,
     IndexingError,
     RepositorySizeError,
     EmbeddingError,
 )
 
-faiss.omp_set_num_threads(1)  # CPU 스레드 수 제한으로 안정성 향상
+faiss.omp_set_num_threads(1)
 
-
-# 로거 설정
 logger = logging.getLogger(__name__)
-# logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT) # 애플리케이션 진입점에서 설정
-
 
 def get_repo_primary_language(repo_url, token=None):
     """GitHub API로 저장소 주 사용 언어 및 크기 조회"""
@@ -416,4 +412,4 @@ def format_time(seconds):
     if minutes > 0:
         return f"{minutes}분 {remaining_seconds}초"
     else:
-        return f"{remaining_seconds}초"
+        return f"{remaining_seconds}초" 

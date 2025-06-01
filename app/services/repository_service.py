@@ -3,14 +3,16 @@ import logging
 from datetime import datetime, timezone
 import threading
 
-from config import Config
+from app.core.config import Config # 수정: config 임포트 경로 변경
+# 수정: 하위 모듈 임포트 경로 변경 (indexer, searcher, embeddings)
 from .indexer import (
     create_index_from_repo,
     load_faiss_index,
 )
 from .searcher import search_and_rag
 from .embeddings import GeminiAPIEmbeddings
-from common.exceptions import (
+# 수정: 예외 클래스 임포트 경로 변경
+from app.core.exceptions import (
     RepositoryError,
     IndexingError,
     RepositorySizeError,
@@ -305,4 +307,4 @@ class RepositoryService:
     def _check_index_exists(self, repo_name, index_type):
         """주어진 저장소 이름과 인덱스 타입에 대한 인덱스 존재 여부를 확인합니다."""
         index_path = self._get_index_path(repo_name, index_type)
-        return os.path.exists(index_path)
+        return os.path.exists(index_path) 

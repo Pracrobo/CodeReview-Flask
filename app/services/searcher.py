@@ -1,25 +1,31 @@
 import logging
 
 from google import genai
-
-
-# FAISS CPU 전용 설정 (GPU 경고 방지)
 import faiss
-from config import Config
-from common.exceptions import EmbeddingError, RAGError
 
-faiss.omp_set_num_threads(1)  # CPU 스레드 수 제한으로 안정성 향상
+# 수정: config 및 예외 클래스 임포트 경로 변경
+from app.core.config import Config
+from app.core.exceptions import EmbeddingError, RAGError
 
+faiss.omp_set_num_threads(1)
 
-# 로거 설정
 logger = logging.getLogger(__name__)
 
 # Gemini 클라이언트 초기화
-client = genai.Client(api_key=Config.GEMINI_API_KEY1)
-
+# API 키 로드 실패 시 앱 로딩 단계에서 알 수 있도록 try-except 추가 고려
+try:
+    client = genai.Client(api_key=Config.GEMINI_API_KEY1) 
+    # GEMINI_API_KEY1이 없을 경우를 대비하여 KEY2도 사용하거나, 설정에서 하나의 키만 사용하도록 통일 필요.
+    # 혹은 Config.GEMINI_API_KEY (선택된 키) 와 같이 사용하는 것을 권장.
+except Exception as e:
+    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. GEMINI_API_KEY1 설정을 확인하세요.")
+    client = None # 또는 raise AppException("Gemini API 키 설정 오류") 등으로 처리
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
+    if not client:
+        logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
+        return korean_text
     try:
         prompt = f"""
         다음 한국어 코드 관련 질문을 영어로 번역해주세요. 
@@ -42,6 +48,9 @@ def translate_code_query_to_english(korean_text, llm_model_name):
 
 def translate_to_english(korean_text, llm_model_name):
     """일반 한국어 텍스트 영어 번역"""
+    if not client:
+        logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
+        return korean_text
     try:
         prompt = f"""
         다음 한국어 텍스트를 자연스러운 영어로 번역해주세요. 기술적 용어는 정확히 번역하세요.
@@ -69,11 +78,14 @@ def search_and_rag(
     similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
 ):
     """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
+    if not client:
+        raise RAGError("Gemini 클라이언트가 초기화되지 않아 RAG를 수행할 수 없습니다.")
+        
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(
             f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
         )
-        return None
+        return None # 또는 "관련 인덱스를 찾을 수 없습니다." 와 같은 메시지 반환 고려
 
     vector_store = vector_stores[target_index]
 
@@ -159,7 +171,7 @@ def search_and_rag(
         logger.info("RAG 답변 생성 완료.")
         return response.text
 
-    except EmbeddingError as e_embed_query_fail:
+    except EmbeddingError as e_embed_query_fail: # 이 예외는 현재 코드에서 발생하지 않을 수 있음 (주로 GeminiAPIEmbeddings 클래스에서 발생)
         logger.error(
             f"'{target_index.capitalize()}' 인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}"
         )
@@ -172,4 +184,4 @@ def search_and_rag(
         )
         raise RAGError(
             f"'{target_index.capitalize()}' 검색 또는 RAG 처리 중 오류 발생: {e_rag}"
-        ) from e_rag
+        ) from e_rag 

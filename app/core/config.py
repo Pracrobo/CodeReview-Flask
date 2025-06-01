@@ -79,4 +79,4 @@ LANGUAGE_TO_DETAILS = {
 if not Config.GEMINI_API_KEY1 or not Config.GEMINI_API_KEY2:
     raise ValueError(
         "GEMINI_API_KEY1 또는 GEMINI_API_KEY2를 .env 파일이나 환경 변수에서 찾을 수 없습니다."
-    )
+    ) 
