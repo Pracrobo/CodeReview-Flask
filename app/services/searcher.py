@@ -1,36 +1,40 @@
 import logging
 
 from google import genai
-
-
-# FAISS CPU 전용 설정 (GPU 경고 방지)
 import faiss
-from config import Config
-from common.exceptions import EmbeddingError, RAGError
 
-faiss.omp_set_num_threads(1)  # CPU 스레드 수 제한으로 안정성 향상
+# 수정: config 및 예외 클래스 임포트 경로 변경
+from app.core.config import Config
+from app.core.exceptions import EmbeddingError, RAGError
+from app.core.prompts import prompts
 
+faiss.omp_set_num_threads(1)
 
-# 로거 설정
 logger = logging.getLogger(__name__)
 
 # Gemini 클라이언트 초기화
-client = genai.Client(api_key=Config.GEMINI_API_KEY1)
-
+try:
+    api_key_to_use = Config.GEMINI_API_KEY1
+    logger.info(f"Attempting to initialize Gemini Client with API Key: '{api_key_to_use}'")
+    
+    # API 키가 dummy 값인지 확인
+    if not api_key_to_use or api_key_to_use == "dummy_key_1":
+        logger.warning("GEMINI_API_KEY1이 설정되지 않았거나 dummy 값입니다. 클라이언트를 None으로 설정합니다.")
+        client = None
+    else:
+        client = genai.Client(api_key=api_key_to_use)
+        logger.info("Gemini 클라이언트 초기화 성공")
+except Exception as e:
+    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. API 키 설정을 확인하세요.")
+    client = None
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
+    if not client:
+        logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
+        return korean_text
     try:
-        prompt = f"""
-        다음 한국어 코드 관련 질문을 영어로 번역해주세요. 
-        프로그래밍 용어, 함수명, 클래스명, 변수명은 정확히 유지하세요.
-        코드의 의미와 맥락을 살려서 번역하세요.
-        번역된 영어 텍스트만 출력하세요.
-        
-        한국어 질문: {korean_text}
-        
-        English question:
-        """
+        prompt = prompts.get_code_query_translation_prompt(korean_text)
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
         english_text = response.text.strip()
         logger.info(f"코드 질의 번역 완료: '{korean_text}' -> '{english_text}'")
@@ -42,15 +46,11 @@ def translate_code_query_to_english(korean_text, llm_model_name):
 
 def translate_to_english(korean_text, llm_model_name):
     """일반 한국어 텍스트 영어 번역"""
+    if not client:
+        logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
+        return korean_text
     try:
-        prompt = f"""
-        다음 한국어 텍스트를 자연스러운 영어로 번역해주세요. 기술적 용어는 정확히 번역하세요.
-        번역된 영어 텍스트만 출력하고 다른 설명은 하지 마세요.
-        
-        한국어: {korean_text}
-        
-        영어:
-        """
+        prompt = prompts.get_general_translation_prompt(korean_text)
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
         english_text = response.text.strip()
         logger.info(f"번역 완료: '{korean_text}' -> '{english_text}'")
@@ -69,11 +69,14 @@ def search_and_rag(
     similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
 ):
     """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
+    if not client:
+        raise RAGError("Gemini 클라이언트가 초기화되지 않아 RAG를 수행할 수 없습니다.")
+        
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(
             f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
         )
-        return None
+        return None # 또는 "관련 인덱스를 찾을 수 없습니다." 와 같은 메시지 반환 고려
 
     vector_store = vector_stores[target_index]
 
@@ -125,31 +128,11 @@ def search_and_rag(
             [doc.page_content for doc, score in filtered_results]
         )
 
+        # 프롬프트 모듈에서 적절한 프롬프트 가져오기
         if target_index == "code":
-            prompt = f"""
-            주어진 코드 컨텍스트를 바탕으로 다음 질문에 대해 한국어로 상세히 답변해 주세요.
-            코드 예제가 있다면 포함하고, 함수나 클래스의 사용법을 설명해 주세요.
-            만약 컨텍스트에 질문과 관련된 코드가 없다면, "컨텍스트에 관련 코드가 없습니다."라고 답변해 주세요.
-            
-            코드 컨텍스트:
-            {context_for_rag}
-            
-            질문: {search_query}
-            
-            답변:
-            """
+            prompt = prompts.get_code_rag_prompt(context_for_rag, search_query)
         else:
-            prompt = f"""
-            주어진 컨텍스트 정보를 사용하여 다음 질문에 대해 한국어로 답변해 주세요.
-            만약 컨텍스트에 질문과 관련된 정보가 없다면, "컨텍스트에 관련 정보가 없습니다."라고 답변해 주세요.
-            
-            컨텍스트:
-            {context_for_rag}
-            
-            질문: {search_query}
-            
-            답변:
-            """
+            prompt = prompts.get_document_rag_prompt(context_for_rag, search_query)
 
         logger.info(
             f"\n'{llm_model_name}' 모델을 사용하여 RAG 답변 생성을 시작합니다..."
@@ -159,7 +142,7 @@ def search_and_rag(
         logger.info("RAG 답변 생성 완료.")
         return response.text
 
-    except EmbeddingError as e_embed_query_fail:
+    except EmbeddingError as e_embed_query_fail: # 이 예외는 현재 코드에서 발생하지 않을 수 있음 (주로 GeminiAPIEmbeddings 클래스에서 발생)
         logger.error(
             f"'{target_index.capitalize()}' 인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}"
         )
@@ -172,4 +155,4 @@ def search_and_rag(
         )
         raise RAGError(
             f"'{target_index.capitalize()}' 검색 또는 RAG 처리 중 오류 발생: {e_rag}"
-        ) from e_rag
+        ) from e_rag 

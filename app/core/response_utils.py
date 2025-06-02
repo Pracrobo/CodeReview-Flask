@@ -40,4 +40,4 @@ def in_progress_response(
         "message": message,
         "timestamp": get_iso_timestamp(),
     }
-    return response_data, status_code
+    return response_data, status_code 

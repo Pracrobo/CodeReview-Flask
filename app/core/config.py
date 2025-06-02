@@ -1,18 +1,23 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from langchain_text_splitters import Language
+import warnings
 
-# .env 환경 변수 로드
-load_dotenv()
+# .env 환경 변수 로드 - 명시적 경로 지정
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+load_dotenv(dotenv_path=env_path)
+
+# .env 파일에서 환경 변수 직접 로드
+env_vars = dotenv_values(dotenv_path=env_path)
 
 
 class Config:
     """애플리케이션 설정 클래스"""
 
-    # API 키
-    GITHUB_API_TOKEN = os.getenv("GITHUB_API_TOKEN")
-    GEMINI_API_KEY1 = os.getenv("GEMINI_API_KEY1")
-    GEMINI_API_KEY2 = os.getenv("GEMINI_API_KEY2")
+    # API 키 - .env 파일에서 직접 로드
+    GITHUB_API_TOKEN = env_vars.get("GITHUB_API_TOKEN") or os.getenv("GITHUB_API_TOKEN")
+    GEMINI_API_KEY1 = env_vars.get("GEMINI_API_KEY1") or os.getenv("GEMINI_API_KEY1")
+    GEMINI_API_KEY2 = env_vars.get("GEMINI_API_KEY2") or os.getenv("GEMINI_API_KEY2")
 
     # 모델 이름 (지정된 최신 모델, 변경 주의)
     DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-exp-03-07"
@@ -33,7 +38,7 @@ class Config:
 
     # API 오류별 대기 시간 설정 (초 단위)
     QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
-    GENERAL_API_ERROR_SLEEP_TIME = 5  # 일반 API 오류 시 대기 시간
+    GENERAL_API_ERROR_SLEEP_TIME = 30  # 일반 API 오류 시 대기 시간
     SUCCESS_SLEEP_TIME = 60  # 성공적인 임베딩 후 대기 시간
 
     # 문서 파일 확장자
@@ -51,7 +56,7 @@ class Config:
     API_VERSION = "v1"
     MAX_REPOSITORIES = 100  # 최대 저장소 개수 제한
     REQUEST_TIMEOUT = 300  # 요청 타임아웃 (초)
-    MAX_REPO_SIZE_MB = 3  # 최대 저장소 크기 (MB)
+    MAX_REPO_SIZE_MB = 5  # 최대 저장소 크기 (MB)
 
 
 # 지원 언어, 확장자, Langchain Enum 매핑
@@ -77,6 +82,11 @@ LANGUAGE_TO_DETAILS = {
 }
 
 if not Config.GEMINI_API_KEY1 or not Config.GEMINI_API_KEY2:
-    raise ValueError(
-        "GEMINI_API_KEY1 또는 GEMINI_API_KEY2를 .env 파일이나 환경 변수에서 찾을 수 없습니다."
+    warnings.warn(
+        "GEMINI_API_KEY1 또는 GEMINI_API_KEY2를 .env 파일이나 환경 변수에서 찾을 수 없습니다. "
+        "임베딩 기능이 제한됩니다.",
+        UserWarning
     )
+    # API 키가 없어도 서버가 시작되도록 기본값 설정
+    Config.GEMINI_API_KEY1 = Config.GEMINI_API_KEY1 or "dummy_key_1"
+    Config.GEMINI_API_KEY2 = Config.GEMINI_API_KEY2 or "dummy_key_2" 
