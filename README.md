@@ -1,7 +1,7 @@
 # 실행 방법
 
 - pip install -r requirements.txt
-- python app.py
+- python run.py
 
 # 테스트 방법
 

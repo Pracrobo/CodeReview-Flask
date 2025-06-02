@@ -1,10 +1,11 @@
 import os
 from app import create_app
 
+app = create_app()
+
 
 def main():
     """메인 실행 함수"""
-    app = create_app()
 
     # 환경변수에서 설정 읽기
     host = os.getenv("FLASK_HOST", "127.0.0.1")
