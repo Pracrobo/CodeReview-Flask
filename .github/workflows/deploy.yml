@@ -1,0 +1,56 @@
+name: Deploy Flask Server (AIssue-BE-Flask)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-flask:
+    name: Build and Deploy Flask App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy Flask App to Server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "Navigating to project directory..."
+            cd ${{ secrets.SERVER_FLASK_APP_PATH }}
+
+            echo "Pulling latest changes from main branch..."
+            git checkout main
+            git reset --hard HEAD
+            git pull origin main
+
+            echo "Setting up Conda environment and installing dependencies..."
+            source ${{ secrets.MINICONDA_PATH }}/etc/profile.d/conda.sh
+            conda activate ${{ secrets.CONDA_ENV_NAME }}
+            if [ $? -ne 0 ]; then
+              echo "Failed to activate conda environment: ${{ secrets.CONDA_ENV_NAME }}. Exiting."
+              exit 1
+            fi
+            echo "Installing/updating Python dependencies from requirements.txt..."
+            pip install -r requirements.txt
+
+            echo "Creating .env file from secrets..."
+            echo "FLASK_ENV=production" > .env
+            echo "FLASK_DEBUG=false" >> .env
+            echo "GITHUB_TOKEN='${{ secrets.GHP_TOKEN_FOR_APP }}'" >> .env
+            echo "GEMINI_API_KEY1='${{ secrets.GEMINI_API_KEY1_FOR_APP }}'" >> .env
+            echo "GEMINI_API_KEY2='${{ secrets.GEMINI_API_KEY2_FOR_APP }}'" >> .env
+
+            echo "Reloading PM2 process for Flask app: ${{ secrets.PM2_FLASK_APP_NAME }}"
+            pm2 restart ${{ secrets.PM2_FLASK_APP_NAME }}
+
+            # pm2 save
+
+            echo "Flask app deployment successful!"
+            conda deactivate
