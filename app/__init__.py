@@ -25,12 +25,7 @@ def create_app(config_class=Config):
             "service": "AIssue Repository RAG 분석 서비스",
             "version": Config.API_VERSION,
             "status": "running",
-            "swagger_docs": "/docs/",  # Swagger UI 링크는 Blueprint 경로에 따라 변경
+            "swagger_docs": "/docs/",
         }
-
-    # 추가적인 앱 설정 (예: 데이터베이스 초기화, CORS 설정 등)
-    # db.init_app(app)
-    # from flask_cors import CORS
-    # CORS(app) # 예시
 
     return app 
