@@ -1,5 +1,3 @@
-# This file makes the 'api' directory a Python package.
-
 from flask import Blueprint
 from flask_restx import Api
 from .repository_api import repository_ns  # repository_api.py 에서 정의된 네임스페이스

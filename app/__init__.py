@@ -1,8 +1,8 @@
 import logging
 from flask import Flask
 from .core.config import Config
-from .api import api_bp # Blueprint 임포트 (추후 생성)
-# from .api import register_blueprints # 블루프린트 등록 함수 (추후 생성)
+from .api import api_bp  # Blueprint 임포트
+
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -11,12 +11,12 @@ def create_app(config_class=Config):
     # 로깅 설정
     logging.basicConfig(
         level=getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO),
-        format=Config.LOG_FORMAT
+        format=Config.LOG_FORMAT,
     )
     app.logger.info("Flask app created and configured.")
 
     # 블루프린트 등록
-    app.register_blueprint(api_bp, url_prefix='/') 
+    app.register_blueprint(api_bp, url_prefix="/")
 
     @app.route("/")
     def home():
@@ -28,4 +28,4 @@ def create_app(config_class=Config):
             "swagger_docs": "/docs/",
         }
 
-    return app 
+    return app

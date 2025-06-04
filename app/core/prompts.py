@@ -1,18 +1,11 @@
-"""
-AI 프롬프트 관리 모듈
-
-이 모듈은 Flask 애플리케이션에서 사용되는 모든 AI 프롬프트를 중앙에서 관리합니다.
-프롬프트 수정이나 추가가 필요할 때 이 파일만 수정하면 됩니다.
-"""
-
 from typing import Dict, Any
 
 
 class PromptTemplates:
     """AI 프롬프트 템플릿 관리 클래스"""
-    
+
     # ===== 번역 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_code_query_translation_prompt(korean_text: str) -> str:
         """코드 관련 한국어 질의를 영어로 번역하는 프롬프트"""
@@ -26,7 +19,7 @@ class PromptTemplates:
 
 English question:
 """
-    
+
     @staticmethod
     def get_general_translation_prompt(korean_text: str) -> str:
         """일반 한국어 텍스트를 영어로 번역하는 프롬프트"""
@@ -38,9 +31,9 @@ English question:
 
 영어:
 """
-    
+
     # ===== RAG (검색 증강 생성) 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_code_rag_prompt(context: str, question: str) -> str:
         """코드 검색 결과를 바탕으로 한 RAG 프롬프트"""
@@ -56,7 +49,7 @@ English question:
 
 답변:
 """
-    
+
     @staticmethod
     def get_document_rag_prompt(context: str, question: str) -> str:
         """문서 검색 결과를 바탕으로 한 RAG 프롬프트"""
@@ -71,9 +64,9 @@ English question:
 
 답변:
 """
-    
+
     # ===== README 요약 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
         """README 내용을 요약하는 프롬프트"""
@@ -90,9 +83,9 @@ README:
 
 요약:
 """
-    
+
     # ===== 프롬프트 설정 관리 =====
-    
+
     @staticmethod
     def get_prompt_config() -> Dict[str, Any]:
         """프롬프트 관련 설정값들을 반환"""
@@ -110,11 +103,11 @@ README:
             "rag": {
                 "temperature": 0.4,  # 창의적이면서도 정확한 답변을 위한 중간 온도
                 "max_output_tokens": 2000,
-            }
+            },
         }
-    
+
     # ===== 프롬프트 검증 및 유틸리티 =====
-    
+
     @staticmethod
     def validate_prompt_inputs(**kwargs) -> bool:
         """프롬프트 입력값들을 검증"""
@@ -122,7 +115,7 @@ README:
             if not value or (isinstance(value, str) and not value.strip()):
                 return False
         return True
-    
+
     @staticmethod
     def get_fallback_description_templates() -> Dict[str, str]:
         """README 요약 실패 시 사용할 기본 설명 템플릿들"""
@@ -132,30 +125,35 @@ README:
             "library": "{name}은(는) 개발용 라이브러리 또는 패키지입니다.",
             "tool": "{name}은(는) 개발 도구 또는 유틸리티입니다.",
             "default": "{name}은(는) {owner}에서 개발한 오픈소스 프로젝트입니다.",
-            "unknown": "{repo_name} 저장소입니다."
+            "unknown": "{repo_name} 저장소입니다.",
         }
 
 
 # 편의를 위한 전역 인스턴스
 prompts = PromptTemplates()
 
+
 # 하위 호환성을 위한 함수들 (기존 코드에서 직접 호출할 수 있도록)
 def get_code_query_translation_prompt(korean_text: str) -> str:
     """코드 질의 번역 프롬프트 (하위 호환성)"""
     return prompts.get_code_query_translation_prompt(korean_text)
 
+
 def get_general_translation_prompt(korean_text: str) -> str:
     """일반 번역 프롬프트 (하위 호환성)"""
     return prompts.get_general_translation_prompt(korean_text)
+
 
 def get_code_rag_prompt(context: str, question: str) -> str:
     """코드 RAG 프롬프트 (하위 호환성)"""
     return prompts.get_code_rag_prompt(context, question)
 
+
 def get_document_rag_prompt(context: str, question: str) -> str:
     """문서 RAG 프롬프트 (하위 호환성)"""
     return prompts.get_document_rag_prompt(context, question)
 
+
 def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
     """README 요약 프롬프트 (하위 호환성)"""
-    return prompts.get_readme_summary_prompt(repo_name, readme_content) 
+    return prompts.get_readme_summary_prompt(repo_name, readme_content)
