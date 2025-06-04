@@ -28,3 +28,16 @@ def error_response(message, error_code=None, status_code=500):
         "timestamp": get_iso_timestamp(),
     }
     return response_data, status_code
+
+
+def in_progress_response(
+    progress_data=None, message="요청이 처리 중입니다.", status_code=202
+):  # progress 파라미터명을 progress_data로 변경하여 data와 구분
+    """진행률 응답을 생성합니다."""
+    response_data = {
+        "status": "in_progress",  # 상태 필드 추가
+        "progress": progress_data,  # progress 필드 사용
+        "message": message,
+        "timestamp": get_iso_timestamp(),
+    }
+    return response_data, status_code 
