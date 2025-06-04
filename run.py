@@ -12,11 +12,11 @@ def main():
     port = int(os.getenv("FLASK_PORT", 3002))
     debug = os.getenv("FLASK_DEBUG", "true").lower() in ("true", "1", "yes", "on")
 
-    print("Flask 애플리케이션 시작:")
-    print(f"  - Host: {host}")
-    print(f"  - Port: {port}")
-    print(f"  - Debug: {debug}")
-    print(f"  - Swagger UI: http://{host}:{port}/docs/")
+    app.logger.info("플라스크 애플리케이션을 시작합니다:")
+    app.logger.info(f"  - 호스트: {host}")
+    app.logger.info(f"  - 포트: {port}")
+    app.logger.info(f"  - 디버그 모드: {debug}")
+    app.logger.info(f"  - Swagger UI: http://{host}:{port}/docs/")
 
     app.run(host=host, port=port, debug=debug)
 

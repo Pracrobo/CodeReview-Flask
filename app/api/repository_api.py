@@ -243,19 +243,25 @@ class RepositoryIndex(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """저장소 인덱싱 요청. Express에서 호출되는 API."""
+        data = {}
         try:
             data = request.get_json(force=True)
             repo_url = validate_repo_url(data)
             repository_info = data.get('repository_info', {})
             callback_url = data.get('callback_url')
             user_id = data.get('user_id')
+
+            log_payload = {
+                "repo_url": repo_url,
+                "repo_full_name": repository_info.get('fullName'),
+                "callback_url": callback_url,
+                "user_id": user_id
+            }
+            logger.info(f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}")
             
-            logger.info(f"Express에서 인덱싱 요청 받음: {repo_url}")
             if repository_info:
-                logger.info(f"저장소 정보: {repository_info.get('fullName', 'N/A')}")
-            if user_id:
-                logger.info(f"요청 사용자 ID: {user_id}")
-            
+                logger.debug(f"전달된 저장소 상세 정보 ({repo_url}): {repository_info}")
+
             # 인덱싱 서비스에 콜백 URL과 사용자 ID 전달
             initial_status_result = indexing_service.prepare_and_start_indexing(
                 repo_url, callback_url, user_id
@@ -278,6 +284,7 @@ class RepositoryIndex(Resource):
 
             if current_status == "completed":
                 message = f"저장소 '{repo_name}'은(는) 이미 성공적으로 인덱싱되었습니다."
+                logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}")
                 return success_response(data=response_data, message=message, status_code=200)
             
             # 새로운 요청이거나 진행 중인 요청 처리
@@ -286,17 +293,28 @@ class RepositoryIndex(Resource):
             else:
                 message = f"저장소 '{repo_name}' 인덱싱 작업이 이미 진행 중입니다."
             
+            logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 202. 메시지: {message}")
             return success_response(data=response_data, message=message, status_code=202)
             
         except ValidationError as e:
-            logger.warning(f"입력 값 검증 오류 (index): {e}")
-            return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
+            error_message = str(e)
+            error_code = "VALIDATION_ERROR"
+            status_code = 400
+            logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+            # logger.error(f"API 요청 오류: [{request.method}] {request.path}. 오류 메시지: '{error_message}', 코드: {error_code}, 상태 코드: {status_code}") # error_response에서 처리하도록 변경 예정
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except ServiceError as e:
-            logger.error(f"서비스 오류 (index): {e}")
-            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=400 if e.error_code else 500)
+            error_message = str(e)
+            error_code = e.error_code or "SERVICE_ERROR"
+            status_code = 400 if e.error_code else 500 # ServiceError가 상태 코드를 결정할 수 있도록
+            logger.error(f"API 요청 처리 중 서비스 오류 발생 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except Exception as e:
-            logger.error(f"예상치 못한 오류 (index): {e}", exc_info=True)
-            return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500)
+            error_message = "서버 내부 오류가 발생했습니다."
+            error_code = "INTERNAL_SERVER_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 예상치 못한 오류 발생 [{request.method} {request.path}]: {e}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
 @repository_ns.route("/search")
 class RepositorySearch(Resource):
@@ -308,26 +326,42 @@ class RepositorySearch(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """저장소에서 코드 또는 문서 검색"""
+        data = {}
         try:
             data = request.get_json()
             repo_name, query, search_type = validate_search_request(data)
-            repo_url = f"https://github.com/{repo_name}" # Service에서 repo_name 대신 repo_url을 받도록 변경 고려
+            # repo_url = f"https://github.com/{repo_name}" # Service에서 repo_name 대신 repo_url을 받도록 변경 고려
             
+            log_payload = {"repo_name": repo_name, "query": query, "search_type": search_type}
+            logger.info(f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}")
+
             # SearchService의 메서드 호출
-            result = search_service.search_repository(repo_url, query, search_type)
-            return success_response(data=result, message="검색이 완료되었습니다.")
+            result = search_service.search_repository(f"https://github.com/{repo_name}", query, search_type)
+
+            message = "검색이 완료되었습니다."
+            logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message} (저장소: {repo_name}, 질의: '{query}')")
+            return success_response(data=result, message=message)
             
         except ValidationError as e:
-            logger.warning(f"입력 값 검증 오류 (search): {e}")
-            return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
+            error_message = str(e)
+            error_code = "VALIDATION_ERROR"
+            status_code = 400
+            logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except ServiceError as e:
-            logger.error(f"서비스 오류 (search): {e} / Code: {e.error_code}")
+            error_message = str(e)
+            error_code = e.error_code or "SERVICE_ERROR"
+            status_code = 500
             if e.error_code == "INDEX_NOT_FOUND":
-                return error_response(message=str(e), error_code=e.error_code, status_code=404)
-            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500) # INDEX_LOAD_FAILED 등
+                status_code = 404
+            logger.error(f"API 요청 처리 중 서비스 오류 발생 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except Exception as e:
-            logger.error(f"예상치 못한 오류 (search): {e}", exc_info=True)
-            return error_response(message="서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500)
+            error_message = "서버 내부 오류가 발생했습니다."
+            error_code = "INTERNAL_SERVER_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 예상치 못한 오류 발생 [{request.method} {request.path}]: {e}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
 @repository_ns.route("/status/<path:repo_name>")
 class RepositoryStatus(Resource):
@@ -341,7 +375,8 @@ class RepositoryStatus(Resource):
     def get(self, repo_name):
         """저장소 인덱싱 상태 확인. Express에서 호출되는 API."""
         try:
-            logger.info(f"Express에서 상태 조회 요청: {repo_name}")
+            log_payload = {"repo_name": repo_name}
+            logger.info(f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}")
             
             # StatusService의 메서드 호출
             status_data_result = status_service.get_repository_status_data(repo_name)
@@ -364,42 +399,44 @@ class RepositoryStatus(Resource):
             }
 
             if current_status == "not_indexed":
-                return error_response(
-                    message=f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다.", 
-                    error_code="NOT_FOUND", 
-                    status_code=404
-                )
+                error_message = f"저장소 '{repo_name}'에 대한 인덱싱 정보를 찾을 수 없습니다."
+                error_code = "NOT_FOUND"
+                status_code = 404
+                logger.warning(f"API 요청 처리 중 정보 없음 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}")
+                return error_response(message=error_message, error_code=error_code, status_code=status_code)
             elif current_status == "failed":
-                return error_response(
-                    message=f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}", 
-                    error_code=status_data_result.get("error_code", "INDEXING_FAILED"), 
-                    status_code=409
-                )
+                error_message = f"저장소 '{repo_name}' 인덱싱에 실패했습니다: {status_data_result.get('error', '알 수 없는 오류')}"
+                error_code = status_data_result.get("error_code", "INDEXING_FAILED")
+                status_code = 409
+                logger.error(f"API 요청 처리 중 오류 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}")
+                return error_response(message=error_message, error_code=error_code, status_code=status_code)
             elif current_status in ["pending", "indexing"]:
-                return success_response(
-                    data=response_data, 
-                    message=f"저장소 '{repo_name}' 인덱싱 진행 중입니다.", 
-                    status_code=202
-                )
+                message = f"저장소 '{repo_name}' 인덱싱 진행 중입니다."
+                logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 202. 메시지: {message}")
+                return success_response(data=response_data, message=message, status_code=202)
             elif current_status == "completed":
-                return success_response(
-                    data=response_data, 
-                    message=f"저장소 '{repo_name}' 인덱싱이 완료되었습니다."
-                )
-            else:
-                logger.error(f"Unknown status '{current_status}' for repo '{repo_name}'")
-                return error_response(
-                    message=f"알 수 없는 상태값({current_status})입니다.", 
-                    error_code="UNKNOWN_STATUS", 
-                    status_code=500
-                )
+                message = f"저장소 '{repo_name}' 인덱싱이 완료되었습니다."
+                logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}")
+                return success_response(data=response_data, message=message)
+            else: # 알 수 없는 상태
+                error_message = f"알 수 없는 상태값({current_status})입니다."
+                error_code = "UNKNOWN_STATUS"
+                status_code = 500
+                logger.error(f"API 요청 처리 중 알 수 없는 상태값 [{request.method} {request.path}]: 저장소 '{repo_name}'의 상태 '{current_status}'는 처리할 수 없습니다.")
+                return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
         except ServiceError as e:
-            logger.error(f"서비스 오류 (status): {e}")
-            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
+            error_message = str(e)
+            error_code = e.error_code or "SERVICE_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 서비스 오류 발생 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}. 저장소: {repo_name}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except Exception as e:
-            logger.error(f"예상치 못한 오류 (status): {e}", exc_info=True)
-            return error_response(message="상태 조회 중 서버 내부 오류가 발생했습니다.", error_code="INTERNAL_SERVER_ERROR", status_code=500) 
+            error_message = "상태 조회 중 서버 내부 오류가 발생했습니다."
+            error_code = "INTERNAL_SERVER_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 예상치 못한 오류 발생 [{request.method} {request.path}]: {e}. 저장소: {repo_name}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
 # README 요약 관련 모델들
 readme_summary_request = api.model(
@@ -507,23 +544,33 @@ class ReadmeSummary(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """README 내용을 AI로 요약합니다. Express에서 호출되는 API."""
+        data = {}
         try:
             data = request.get_json()
             
-            # 입력 데이터 검증
-            if not data:
-                return error_response(message="요청 데이터가 필요합니다.", error_code="MISSING_DATA", status_code=400)
-            
+            # 입력 데이터 검증 (간단한 검증 후 로깅, 상세 검증은 서비스 레이어에서)
             repo_name = data.get("repo_name")
-            readme_content = data.get("readme_content")
+            readme_content_length = len(data.get("readme_content", ""))
+
+            log_payload = {"repo_name": repo_name, "readme_content_length": readme_content_length}
+            logger.info(f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}")
+
+            if not data:
+                error_message="요청 데이터가 필요합니다."
+                logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+                return error_response(message=error_message, error_code="MISSING_DATA", status_code=400)
+
+            readme_content = data.get("readme_content") # repo_name은 위에서 이미 가져옴
             
             if not repo_name:
-                return error_response(message="저장소 이름이 필요합니다.", error_code="MISSING_REPO_NAME", status_code=400)
+                error_message="저장소 이름이 필요합니다."
+                logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+                return error_response(message=error_message, error_code="MISSING_REPO_NAME", status_code=400)
             
             if not readme_content:
-                return error_response(message="README 내용이 필요합니다.", error_code="MISSING_README_CONTENT", status_code=400)
-            
-            logger.info(f"README 요약 요청 받음: {repo_name}")
+                error_message="README 내용이 필요합니다."
+                logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+                return error_response(message=error_message, error_code="MISSING_README_CONTENT", status_code=400)
             
             # README 요약 수행
             summary = readme_summarizer.summarize_readme(repo_name, readme_content)
@@ -535,17 +582,12 @@ class ReadmeSummary(Resource):
                     "original_length": len(readme_content),
                     "summary_length": len(summary),
                 }
-                
-                logger.info(f"README 요약 완료: {repo_name}")
-                return success_response(
-                    data=response_data,
-                    message=f"README 요약이 완료되었습니다: {repo_name}",
-                    status_code=200
-                )
+                message = f"README 요약이 완료되었습니다: {repo_name}"
+                logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}")
+                return success_response(data=response_data, message=message, status_code=200)
             else:
                 # 요약 실패 시 기본 설명 생성
                 fallback_description = readme_summarizer.create_fallback_description(repo_name)
-                
                 response_data = {
                     "repo_name": repo_name,
                     "summary": fallback_description,
@@ -553,27 +595,29 @@ class ReadmeSummary(Resource):
                     "summary_length": len(fallback_description),
                     "is_fallback": True,
                 }
+                message = f"README 요약에 실패하여 기본 설명을 생성했습니다: {repo_name}"
+                logger.warning(f"README 요약 실패, 기본 설명 사용: {repo_name}. API 응답 메시지: {message}") # 기존 로그 유지하며 추가 정보 제공
+                logger.info(f"API 요청 성공 (대체 응답): [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}")
+                return success_response(data=response_data, message=message, status_code=200)
                 
-                logger.warning(f"README 요약 실패, 기본 설명 사용: {repo_name}")
-                return success_response(
-                    data=response_data,
-                    message=f"README 요약에 실패하여 기본 설명을 생성했습니다: {repo_name}",
-                    status_code=200
-                )
-                
-        except ValidationError as e:
-            logger.warning(f"입력 값 검증 오류 (summarize-readme): {e}")
-            return error_response(message=str(e), error_code="VALIDATION_ERROR", status_code=400)
+        except ValidationError as e: # 이 경우는 보통 validate_xxx 함수에서 발생
+            error_message = str(e)
+            error_code = "VALIDATION_ERROR"
+            status_code = 400
+            logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except ServiceError as e:
-            logger.error(f"서비스 오류 (summarize-readme): {e}")
-            return error_response(message=str(e), error_code=e.error_code or "SERVICE_ERROR", status_code=500)
+            error_message = str(e)
+            error_code = e.error_code or "SERVICE_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 서비스 오류 발생 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except Exception as e:
-            logger.error(f"예상치 못한 오류 (summarize-readme): {e}", exc_info=True)
-            return error_response(
-                message="README 요약 중 서버 내부 오류가 발생했습니다.",
-                error_code="INTERNAL_SERVER_ERROR",
-                status_code=500,
-            )
+            error_message = "README 요약 중 서버 내부 오류가 발생했습니다."
+            error_code = "INTERNAL_SERVER_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 예상치 못한 오류 발생 [{request.method} {request.path}]: {e}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
 @repository_ns.route("/translate")
 class Translation(Resource):
@@ -586,22 +630,24 @@ class Translation(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """텍스트를 번역합니다."""
+        data = {}
         try:
             data = request.get_json()
             text = data.get("text", "").strip()
             source_language = data.get("source_language", "auto")
             target_language = data.get("target_language", "ko")
 
+            log_payload = {"text_length": len(text), "source_language": source_language, "target_language": target_language}
+            logger.info(f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}")
+
             if not text:
-                return error_response(
-                    message="번역할 텍스트가 필요합니다.",
-                    error_code="MISSING_TEXT",
-                    status_code=400,
-                )
+                error_message = "번역할 텍스트가 필요합니다."
+                error_code = "MISSING_TEXT"
+                status_code = 400
+                logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+                return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
-            logger.info(f"번역 요청 받음: {len(text)}자")
-
-            # 번역 서비스 초기화 및 실행
+            # 번역 서비스 초기화 및 실행 (임포트를 try 블록 안으로 옮겨서 필요 시에만 로드)
             from ..services.translator import Translator
             translator = Translator()
             
@@ -615,37 +661,34 @@ class Translation(Resource):
                 response_data = {
                     "original_text": text,
                     "translated_text": translated_text,
-                    "source_language": source_language,
+                    "source_language": source_language, # 실제 감지된 언어 또는 제공된 언어
                     "target_language": target_language,
                 }
-
-                logger.info(f"번역 완료: {len(text)}자 -> {len(translated_text)}자")
-                return success_response(
-                    message="번역이 완료되었습니다.",
-                    data=response_data,
-                )
+                message = "번역이 완료되었습니다."
+                logger.info(f"API 요청 성공: [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message} ({len(text)}자 -> {len(translated_text)}자, {source_language} -> {target_language})")
+                return success_response(message=message, data=response_data)
             else:
-                logger.warning("번역 실패, 원본 텍스트 반환")
-                return error_response(
-                    message="번역에 실패했습니다. 원본 텍스트를 사용해주세요.",
-                    error_code="TRANSLATION_FAILED",
-                    status_code=500,
-                )
+                error_message = "번역에 실패했습니다. 원본 텍스트를 사용해주세요."
+                error_code = "TRANSLATION_FAILED"
+                status_code = 500 # 서비스 실패로 간주
+                logger.error(f"API 요청 처리 중 번역 실패 [{request.method} {request.path}]: Text length {len(text)}, Source: {source_language}, Target: {target_language}")
+                return error_response(message=error_message, error_code=error_code, status_code=status_code)
 
-        except ValidationError as e:
-            logger.warning(f"번역 요청 검증 오류: {e}")
-            return error_response(
-                message=str(e), error_code="VALIDATION_ERROR", status_code=400
-            )
+        except ValidationError as e: # 이 경우는 보통 validate_xxx 함수에서 발생
+            error_message = str(e)
+            error_code = "VALIDATION_ERROR"
+            status_code = 400
+            logger.warning(f"API 요청 유효성 검사 실패 [{request.method} {request.path}]: {error_message}. 요청 데이터: {data}")
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except ServiceError as e:
-            logger.error(f"번역 서비스 오류: {e}")
-            return error_response(
-                message=str(e), error_code="SERVICE_ERROR", status_code=500
-            )
+            error_message = str(e)
+            error_code = e.error_code or "SERVICE_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 서비스 오류 발생 [{request.method} {request.path}]: {error_message}. ErrorCode: {error_code}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)
         except Exception as e:
-            logger.error(f"번역 중 예상치 못한 오류: {e}")
-            return error_response(
-                message="번역 중 서버 내부 오류가 발생했습니다.",
-                error_code="INTERNAL_SERVER_ERROR",
-                status_code=500,
-            ) 
+            error_message = "번역 중 서버 내부 오류가 발생했습니다."
+            error_code = "INTERNAL_SERVER_ERROR"
+            status_code = 500
+            logger.error(f"API 요청 처리 중 예상치 못한 오류 발생 [{request.method} {request.path}]: {e}. 요청 데이터: {data}", exc_info=True)
+            return error_response(message=error_message, error_code=error_code, status_code=status_code)

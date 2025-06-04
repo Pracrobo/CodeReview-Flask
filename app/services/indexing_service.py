@@ -284,7 +284,7 @@ class IndexingService:
         Returns:
             인덱스 상태 문자열
         """
-        return "completed" if vector_store else "not_applicable_or_failed"
+        return "완료됨" if vector_store else "적용불가_또는_실패"
 
     def _get_error_code(self, exception: Exception) -> str:
         """예외 타입에 따른 오류 코드를 반환합니다.

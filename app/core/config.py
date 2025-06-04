@@ -83,8 +83,8 @@ LANGUAGE_TO_DETAILS = {
 
 if not Config.GEMINI_API_KEY1 or not Config.GEMINI_API_KEY2:
     warnings.warn(
-        "GEMINI_API_KEY1 또는 GEMINI_API_KEY2를 .env 파일이나 환경 변수에서 찾을 수 없습니다. "
-        "임베딩 기능이 제한됩니다.",
+        "Gemini API 키(GEMINI_API_KEY1 또는 GEMINI_API_KEY2)가 .env 파일이나 환경 변수에 설정되어 있지 않습니다. "
+        "일부 기능(예: 임베딩) 사용이 제한될 수 있습니다.",
         UserWarning
     )
     # API 키가 없어도 서버가 시작되도록 기본값 설정
