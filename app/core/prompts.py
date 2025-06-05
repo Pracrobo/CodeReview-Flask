@@ -10,9 +10,9 @@ from typing import Dict, Any
 
 class PromptTemplates:
     """AI 프롬프트 템플릿 관리 클래스"""
-    
+
     # ===== 번역 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_code_query_translation_prompt(korean_text: str) -> str:
         """코드 관련 한국어 질의를 영어로 번역하는 프롬프트"""
@@ -26,7 +26,7 @@ class PromptTemplates:
 
 English question:
 """
-    
+
     @staticmethod
     def get_general_translation_prompt(korean_text: str) -> str:
         """일반 한국어 텍스트를 영어로 번역하는 프롬프트"""
@@ -38,9 +38,9 @@ English question:
 
 영어:
 """
-    
+
     # ===== RAG (검색 증강 생성) 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_code_rag_prompt(context: str, question: str) -> str:
         """코드 검색 결과를 바탕으로 한 RAG 프롬프트"""
@@ -56,7 +56,7 @@ English question:
 
 답변:
 """
-    
+
     @staticmethod
     def get_document_rag_prompt(context: str, question: str) -> str:
         """문서 검색 결과를 바탕으로 한 RAG 프롬프트"""
@@ -71,50 +71,47 @@ English question:
 
 답변:
 """
-    
+
     # ===== README 요약 관련 프롬프트 =====
-    
+
     @staticmethod
     def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
         """README 내용을 요약하는 프롬프트"""
         return f"""
-GitHub 저장소 '{repo_name}'의 README를 한국어로 간결하게 요약해주세요.
+GitHub 저장소 '{repo_name}'의 README를 한국어로 요약해주세요.
 
 요약 지침:
 - 프로젝트 목적과 주요 기능만 포함
-- 객관적이고 간결하게 작성
-- 요약문만 출력
+- 적절한 개행으로 가독성 높이기
+- 2000자 이하로 작성
 
 README:
 {readme_content}
 
 요약:
 """
-    
+
     # ===== 프롬프트 설정 관리 =====
-    
+
     @staticmethod
     def get_prompt_config() -> Dict[str, Any]:
         """프롬프트 관련 설정값들을 반환"""
         return {
             "readme_summary": {
                 "temperature": 0.3,  # 일관성 있는 요약을 위해 낮은 온도
-                "max_output_tokens": 1000,  # 토큰 제한 문제 해결을 위해 증가
                 "retry_count": 3,  # 재시도 횟수
                 "min_summary_length": 10,  # 최소 요약 길이
             },
             "translation": {
                 "temperature": 0.2,  # 정확한 번역을 위해 낮은 온도
-                "max_output_tokens": 1000,
             },
             "rag": {
                 "temperature": 0.4,  # 창의적이면서도 정확한 답변을 위한 중간 온도
-                "max_output_tokens": 2000,
-            }
+            },
         }
-    
+
     # ===== 프롬프트 검증 및 유틸리티 =====
-    
+
     @staticmethod
     def validate_prompt_inputs(**kwargs) -> bool:
         """프롬프트 입력값들을 검증"""
@@ -122,7 +119,7 @@ README:
             if not value or (isinstance(value, str) and not value.strip()):
                 return False
         return True
-    
+
     @staticmethod
     def get_fallback_description_templates() -> Dict[str, str]:
         """README 요약 실패 시 사용할 기본 설명 템플릿들"""
@@ -132,30 +129,35 @@ README:
             "library": "{name}은(는) 개발용 라이브러리 또는 패키지입니다.",
             "tool": "{name}은(는) 개발 도구 또는 유틸리티입니다.",
             "default": "{name}은(는) {owner}에서 개발한 오픈소스 프로젝트입니다.",
-            "unknown": "{repo_name} 저장소입니다."
+            "unknown": "{repo_name} 저장소입니다.",
         }
 
 
 # 편의를 위한 전역 인스턴스
 prompts = PromptTemplates()
 
+
 # 하위 호환성을 위한 함수들 (기존 코드에서 직접 호출할 수 있도록)
 def get_code_query_translation_prompt(korean_text: str) -> str:
     """코드 질의 번역 프롬프트 (하위 호환성)"""
     return prompts.get_code_query_translation_prompt(korean_text)
 
+
 def get_general_translation_prompt(korean_text: str) -> str:
     """일반 번역 프롬프트 (하위 호환성)"""
     return prompts.get_general_translation_prompt(korean_text)
+
 
 def get_code_rag_prompt(context: str, question: str) -> str:
     """코드 RAG 프롬프트 (하위 호환성)"""
     return prompts.get_code_rag_prompt(context, question)
 
+
 def get_document_rag_prompt(context: str, question: str) -> str:
     """문서 RAG 프롬프트 (하위 호환성)"""
     return prompts.get_document_rag_prompt(context, question)
 
+
 def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
     """README 요약 프롬프트 (하위 호환성)"""
-    return prompts.get_readme_summary_prompt(repo_name, readme_content) 
+    return prompts.get_readme_summary_prompt(repo_name, readme_content)
