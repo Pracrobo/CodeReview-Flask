@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Gemini 클라이언트 초기화
 try:
     api_key_to_use = Config.GEMINI_API_KEY1
-    logger.info(f"Attempting to initialize Gemini Client with API Key: '{api_key_to_use}'")
+    logger.info(f"Gemini 클라이언트 초기화를 시도합니다. API 키: '{api_key_to_use}'")
     
     # API 키가 dummy 값인지 확인
     if not api_key_to_use or api_key_to_use == "dummy_key_1":

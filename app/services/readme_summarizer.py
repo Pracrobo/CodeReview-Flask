@@ -38,16 +38,18 @@ class ReadmeSummarizer:
                     # 두 번째 API 키 시도
                     api_key = Config.GEMINI_API_KEY2
                     if not api_key or api_key == "dummy_key_2":
+                        logger.error("설정된 유효한 Gemini API 키가 없습니다.")
                         raise ServiceError("유효한 Gemini API 키가 설정되지 않았습니다.")
                 
                 self._client = genai.Client(api_key=api_key)
-                logger.info("README 요약용 Gemini 클라이언트 초기화 완료")
+                logger.info("Gemini API 클라이언트 초기화 완료 (README 요약용)")
             except Exception as e:
+                logger.error(f"Gemini API 클라이언트 생성 중 예외 발생: {e}")
                 raise ServiceError(f"Gemini API 클라이언트 생성 실패: {e}")
         
         return self._client
     
-    def _clean_readme_content(self, content: str) -> str:
+    def _clean_readme_content(self, content: str, repo_name: str) -> str: # repo_name 인자 추가
         """README 내용 전처리"""
         if not content:
             return ""
@@ -86,12 +88,12 @@ class ReadmeSummarizer:
         content = re.sub(r' +', ' ', content)
         
         # 토큰 제한을 고려하여 더 적극적으로 단축 (프롬프트 토큰 절약)
-        if len(content) > 4000:  # 8000에서 4000으로 줄임
+        if len(content) > 4000:
             content = content[:4000] + "..."
-            logger.warning("README 내용이 너무 길어서 4000자로 제한했습니다.")
+            logger.warning(f"'{repo_name}' 저장소의 README 내용이 기준 길이(4000자)를 초과하여 일부를 절단했습니다.")
         
         return content.strip()
-    
+
     def summarize_readme(self, repo_name: str, readme_content: str) -> Optional[str]:
         """README 내용을 요약합니다.
         
@@ -103,19 +105,19 @@ class ReadmeSummarizer:
             요약된 내용 (한국어) 또는 None (실패 시)
         """
         if not readme_content or not readme_content.strip():
-            logger.warning(f"README 내용이 비어있습니다: {repo_name}")
+            logger.warning(f"'{repo_name}' 저장소의 README 내용이 비어있어 요약을 건너뜁니다.")
             return None
         
         # 프롬프트 입력값 검증
         if not prompts.validate_prompt_inputs(repo_name=repo_name, readme_content=readme_content):
-            logger.warning(f"프롬프트 입력값이 유효하지 않습니다: {repo_name}")
+            logger.warning(f"'{repo_name}' 저장소 요약 중 프롬프트 입력값이 유효하지 않습니다.")
             return None
         
         try:
             # README 내용 전처리
-            cleaned_content = self._clean_readme_content(readme_content)
+            cleaned_content = self._clean_readme_content(readme_content, repo_name) # repo_name 전달
             if not cleaned_content:
-                logger.warning(f"전처리 후 README 내용이 비어있습니다: {repo_name}")
+                logger.warning(f"'{repo_name}' 저장소의 README 내용이 전처리 후 비어있어 요약을 건너뜁니다.")
                 return None
             
             # 프롬프트 생성
@@ -126,7 +128,8 @@ class ReadmeSummarizer:
             
             for attempt in range(self.max_retries):
                 try:
-                    logger.info(f"README 요약 시도 {attempt + 1}/{self.max_retries}: {repo_name}")
+                    logger.info(f"'{repo_name}' 저장소 README 요약을 위해 Gemini API 호출 시작. 모델: {self.llm_model}, 온도: {self.temperature}, 최대 토큰: {self.max_output_tokens}")
+                    logger.info(f"'{repo_name}' 저장소 README 요약 API 호출 시도 ({attempt + 1}/{self.max_retries})")
                     
                     response = client.models.generate_content(
                         model=self.llm_model,
@@ -141,58 +144,58 @@ class ReadmeSummarizer:
                     summary = None
                     
                     # 응답 구조 상세 디버깅
-                    logger.debug(f"응답 타입: {type(response)}")
-                    logger.debug(f"응답 속성들: {dir(response)}")
+                    logger.debug(f"Gemini API 응답 객체 타입: {type(response)}")
+                    logger.debug(f"Gemini API 응답 객체 속성: {dir(response)}")
                     
                     # 응답을 JSON으로 변환하여 구조 확인
                     try:
                         if hasattr(response, '_pb'):
-                            logger.debug(f"응답 _pb 구조: {response._pb}")
+                            logger.debug(f"Gemini API 응답 _pb 구조: {response._pb}")
                         if hasattr(response, 'to_dict'):
                             response_dict = response.to_dict()
-                            logger.debug(f"응답 딕셔너리: {response_dict}")
+                            logger.debug(f"Gemini API 응답 사전(dict) 형태: {response_dict}")
                         elif hasattr(response, '__dict__'):
-                            logger.debug(f"응답 __dict__: {response.__dict__}")
+                            logger.debug(f"Gemini API 응답 __dict__: {response.__dict__}")
                     except Exception as debug_e:
-                        logger.debug(f"응답 구조 디버깅 중 오류: {debug_e}")
+                        logger.debug(f"Gemini API 응답 구조 디버깅 중 오류 발생: {debug_e}")
                     
                     # 방법 1: 직접 text 속성 확인
                     if hasattr(response, 'text') and response.text:
                         summary = response.text.strip()
-                        logger.debug(f"방법 1 성공 - 직접 text 속성: {len(summary)}자")
+                        logger.debug(f"요약 추출 성공 (text 속성 직접 접근): {len(summary)}자")
                     
                     # 방법 2: candidates 구조에서 추출
                     elif hasattr(response, 'candidates') and response.candidates:
-                        logger.debug(f"candidates 수: {len(response.candidates)}")
+                        logger.debug(f"API 응답 'candidates' 수: {len(response.candidates)}")
                         
                         for i, candidate in enumerate(response.candidates):
-                            logger.debug(f"candidate {i} 속성들: {dir(candidate)}")
+                            logger.debug(f"Candidate {i} 객체 속성: {dir(candidate)}")
                             
                             # content.parts에서 텍스트 추출
                             if hasattr(candidate, 'content') and candidate.content:
-                                logger.debug(f"candidate {i} content 속성들: {dir(candidate.content)}")
+                                logger.debug(f"Candidate {i} content 객체 속성: {dir(candidate.content)}")
                                 
                                 if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                                    logger.debug(f"candidate {i} parts 수: {len(candidate.content.parts)}")
+                                    logger.debug(f"Candidate {i} content.parts 수: {len(candidate.content.parts)}")
                                     
                                     for j, part in enumerate(candidate.content.parts):
-                                        logger.debug(f"part {j} 속성들: {dir(part)}")
+                                        logger.debug(f"Part {j} 객체 속성: {dir(part)}")
                                         
                                         if hasattr(part, 'text') and part.text:
                                             summary = part.text.strip()
-                                            logger.debug(f"방법 2 성공 - candidate {i} part {j}: {len(summary)}자")
+                                            logger.debug(f"요약 추출 성공 (candidate {i} part {j} 접근): {len(summary)}자")
                                             break
                                 
                                 # content에 직접 text가 있는 경우
                                 elif hasattr(candidate.content, 'text') and candidate.content.text:
                                     summary = candidate.content.text.strip()
-                                    logger.debug(f"방법 2-2 성공 - candidate {i} content.text: {len(summary)}자")
+                                    logger.debug(f"요약 추출 성공 (candidate {i} content.text 접근): {len(summary)}자")
                                     break
                             
                             # candidate에 직접 text가 있는 경우
                             elif hasattr(candidate, 'text') and candidate.text:
                                 summary = candidate.text.strip()
-                                logger.debug(f"방법 2-3 성공 - candidate {i}.text: {len(summary)}자")
+                                logger.debug(f"요약 추출 성공 (candidate {i}.text 접근): {len(summary)}자")
                                 break
                             
                             if summary:
@@ -202,7 +205,7 @@ class ReadmeSummarizer:
                     if not summary:
                         try:
                             response_str = str(response)
-                            logger.debug(f"응답 문자열 (처음 500자): {response_str[:500]}")
+                            logger.debug(f"Gemini API 응답 문자열 (일부): {response_str[:500]}")
                             
                             # 일반적인 패턴으로 텍스트 추출 시도
                             import re
@@ -211,16 +214,16 @@ class ReadmeSummarizer:
                             text_match = re.search(r'"text":\s*"([^"]+)"', response_str)
                             if text_match:
                                 summary = text_match.group(1).strip()
-                                logger.debug(f"방법 3-1 성공 - 정규식 text 패턴: {len(summary)}자")
+                                logger.debug(f"요약 추출 성공 (정규식 text 패턴): {len(summary)}자")
                             
                             # 'text': '내용' 패턴 찾기
                             elif re.search(r"'text':\s*'([^']+)'", response_str):
                                 text_match = re.search(r"'text':\s*'([^']+)'", response_str)
                                 summary = text_match.group(1).strip()
-                                logger.debug(f"방법 3-2 성공 - 정규식 text 패턴 (단일 따옴표): {len(summary)}자")
+                                logger.debug(f"요약 추출 성공 (정규식 text 패턴, 단일 따옴표): {len(summary)}자")
                                 
                         except Exception as str_e:
-                            logger.debug(f"문자열 파싱 중 오류: {str_e}")
+                            logger.debug(f"Gemini API 응답 문자열 파싱 중 오류: {str_e}")
                     
                     # 방법 4: 최신 API 방식 시도
                     if not summary:
@@ -230,34 +233,36 @@ class ReadmeSummarizer:
                                 for part in response.parts:
                                     if hasattr(part, 'text') and part.text:
                                         summary = part.text.strip()
-                                        logger.debug(f"방법 4 성공 - 직접 parts: {len(summary)}자")
+                                        logger.debug(f"요약 추출 성공 (response.parts 직접 접근): {len(summary)}자")
                                         break
                         except Exception as parts_e:
-                            logger.debug(f"parts 접근 중 오류: {parts_e}")
+                            logger.debug(f"Gemini API 응답 response.parts 접근 중 오류: {parts_e}")
                     
                     if summary:
-                        logger.info(f"README 요약 성공: {repo_name} ({len(summary)}자)")
+                        logger.info(f"'{repo_name}' 저장소 README 요약 성공. 요약 길이: {len(summary)}자")
                         return summary
                     else:
-                        logger.warning(f"응답에서 텍스트를 추출할 수 없습니다: {repo_name}")
+                        logger.warning(f"'{repo_name}' 저장소의 Gemini API 응답에서 요약 텍스트를 추출하지 못했습니다.")
                         # 실제 응답 내용을 더 자세히 로그
                         logger.warning(f"응답 전체 내용: {response}")
-                        continue
+                        continue # 다음 재시도
                         
                 except Exception as e:
-                    logger.warning(f"README 요약 시도 {attempt + 1} 실패: {repo_name} - {e}")
+                    logger.warning(f"'{repo_name}' 저장소 README 요약 API 호출 실패 (시도 {attempt + 1}/{self.max_retries}). 오류: {e}")
                     if attempt == self.max_retries - 1:
-                        raise e
+                        # 모든 재시도 실패 시 여기서 루프를 빠져나가 아래의 최종 에러 로깅으로 연결
+                        break
                     
                     # 재시도 전 잠시 대기
                     import time
                     time.sleep(2 ** attempt)  # 지수 백오프
             
-            logger.error(f"모든 재시도 실패: {repo_name}")
+            # for 루프가 break 없이 완료되었거나 (모든 재시도 실패), summary를 못 찾은 경우
+            logger.error(f"'{repo_name}' 저장소 README 요약 API 호출 최종 실패 (모든 재시도 소진).")
             return None
             
         except Exception as e:
-            logger.error(f"README 요약 중 오류 발생: {repo_name} - {e}")
+            logger.error(f"'{repo_name}' 저장소 README 요약 처리 중 예외 발생: {e}")
             return None
     
     def create_fallback_description(self, repo_name: str, repo_info: dict = None) -> str:
@@ -267,7 +272,7 @@ class ReadmeSummarizer:
             if '/' in repo_name:
                 owner, name = repo_name.split('/', 1)
             else:
-                owner, name = 'unknown', repo_name
+                owner, name = '알 수 없음', repo_name # 기본값 한국어화
             
             # 기본 설명 템플릿 가져오기
             templates = prompts.get_fallback_description_templates()
@@ -289,6 +294,6 @@ class ReadmeSummarizer:
                 return templates["default"].format(name=name, owner=owner)
                 
         except Exception as e:
-            logger.warning(f"기본 설명 생성 실패: {repo_name} - {e}")
+            logger.warning(f"'{repo_name}' 저장소의 기본 설명 생성 중 오류 발생: {e}")
             templates = prompts.get_fallback_description_templates()
             return templates["unknown"].format(repo_name=repo_name) 
