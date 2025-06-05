@@ -78,12 +78,12 @@ English question:
     def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
         """README 내용을 요약하는 프롬프트"""
         return f"""
-GitHub 저장소 '{repo_name}'의 README를 한국어로 간결하게 요약해주세요.
+GitHub 저장소 '{repo_name}'의 README를 한국어로 요약해주세요.
 
 요약 지침:
 - 프로젝트 목적과 주요 기능만 포함
-- 객관적이고 간결하게 작성
-- 요약문만 출력
+- 적절한 개행으로 가독성 높이기
+- 2000자 이하로 작성
 
 README:
 {readme_content}
