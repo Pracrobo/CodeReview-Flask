@@ -1,47 +1,31 @@
 import logging
+import numpy as np
 
-from google import genai
 import faiss
 
-# 수정: config 및 예외 클래스 임포트 경로 변경
 from app.core.config import Config
 from app.core.exceptions import EmbeddingError, RAGError
 from app.core.prompts import prompts
+from app.services.gemini_service import gemini_service
 
 faiss.omp_set_num_threads(1)
 
 logger = logging.getLogger(__name__)
 
-# Gemini 클라이언트 초기화
-try:
-    api_key_to_use = Config.GEMINI_API_KEY1
-    logger.info(f"Gemini 클라이언트 초기화를 시도합니다. API 키: '{api_key_to_use}'")
-
-    # API 키가 dummy 값인지 확인
-    if not api_key_to_use or api_key_to_use == "dummy_key_1":
-        logger.warning(
-            "GEMINI_API_KEY1이 설정되지 않았거나 dummy 값입니다. 클라이언트를 None으로 설정합니다."
-        )
-        client = None
-    else:
-        client = genai.Client(api_key=api_key_to_use)
-        logger.info("Gemini 클라이언트 초기화 성공")
-except Exception as e:
-    logger.error(f"Gemini 클라이언트 초기화 실패: {e}. API 키 설정을 확인하세요.")
-    client = None
-
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
-    if not client:
+    try:
+        client = gemini_service.get_client()
+    except Exception:
         logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
         return korean_text
     try:
         prompt = prompts.get_code_query_translation_prompt(korean_text)
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
-        english_text = response.text.strip()
+        english_text = gemini_service.extract_text_from_response(response)
         logger.info(f"코드 질의 번역 완료: '{korean_text}' -> '{english_text}'")
-        return english_text
+        return english_text if english_text else korean_text
     except Exception as e:
         logger.warning(f"코드 질의 번역 실패, 원본 텍스트 사용: {e}")
         return korean_text
@@ -49,18 +33,47 @@ def translate_code_query_to_english(korean_text, llm_model_name):
 
 def translate_to_english(korean_text, llm_model_name):
     """일반 한국어 텍스트 영어 번역"""
-    if not client:
+    try:
+        client = gemini_service.get_client()
+    except Exception:
         logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
         return korean_text
     try:
-        prompt = prompts.get_general_translation_prompt(korean_text)
+        prompt = prompts.get_general_translation_prompt(
+            korean_text, target_language="en"
+        )
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
-        english_text = response.text.strip()
+        english_text = gemini_service.extract_text_from_response(response)
         logger.info(f"번역 완료: '{korean_text}' -> '{english_text}'")
-        return english_text
+        return english_text if english_text else korean_text
     except Exception as e:
         logger.warning(f"번역 실패, 원본 텍스트 사용: {e}")
         return korean_text
+
+
+def preprocess_text(text):
+    """임베딩 입력 전처리(공백, 특수문자, 소문자 변환 등)"""
+    import re
+
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    text = text.lower()
+    return text
+
+
+def normalize_vector(vec):
+    """벡터 정규화"""
+    v = np.array(vec)
+    norm = np.linalg.norm(v) + 1e-8
+    return v / norm
+
+
+def cosine_similarity(vec1, vec2):
+    """코사인 유사도 계산"""
+    v1 = normalize_vector(vec1)
+    v2 = normalize_vector(vec2)
+    return float(np.dot(v1, v2))
 
 
 def search_and_rag(
@@ -71,49 +84,61 @@ def search_and_rag(
     top_k=Config.DEFAULT_TOP_K,
     similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
 ):
-    """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
-    if not client:
+    """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG, 코사인 유사도 직접 적용)"""
+    try:
+        client = gemini_service.get_client()
+    except Exception:
         raise RAGError("Gemini 클라이언트가 초기화되지 않아 RAG를 수행할 수 없습니다.")
 
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(
             f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
         )
-        return None  # 또는 "관련 인덱스를 찾을 수 없습니다." 와 같은 메시지 반환 고려
+        return None
 
     vector_store = vector_stores[target_index]
 
-    # 타입별 번역 수행
     logger.info("사용자 질의를 영어로 번역 중...")
     if target_index == "code":
         english_query = translate_code_query_to_english(search_query, llm_model_name)
     else:
         english_query = translate_to_english(search_query, llm_model_name)
 
+    # 2. 임베딩 입력 전처리
+    processed_query = preprocess_text(english_query)
+
     logger.info(
         f"\n'{target_index.capitalize()}' 인덱스에 대한 의미론적 검색을 시작합니다 (Top K: {top_k}, 유사도 임계값: {similarity_threshold})..."
     )
 
     try:
-        # 영어 질의로 유사도 점수와 함께 검색 수행
-        search_results_with_scores = vector_store.similarity_search_with_score(
-            english_query, k=top_k
-        )
+        # 쿼리 임베딩 추출
+        query_embedding = vector_store.embedding_function.embed_query(processed_query)
+        # FAISS 인덱스의 실제 벡터 개수
+        num_vectors = vector_store.index.ntotal
+        doc_score_pairs = []
+        for idx in range(num_vectors):
+            docstore_id = vector_store.index_to_docstore_id[idx]
+            doc = vector_store.docstore._dict[docstore_id]
+            doc_embedding = vector_store.index.reconstruct(idx)
+            sim = cosine_similarity(query_embedding, doc_embedding)
+            doc_score_pairs.append((doc, sim))
+        # 4. Top-K 상위 결과만 추출
+        doc_score_pairs.sort(key=lambda x: x[1], reverse=True)
+        top_results = doc_score_pairs[:top_k]
 
-        # 유사도 임계값으로 필터링 (코드 검색의 경우 더 관대한 임계값 적용)
-        adjusted_threshold = (
-            similarity_threshold * 0.8
-            if target_index == "code"
-            else similarity_threshold
-        )
+        # 6. 임계값 동적 완화
         filtered_results = [
-            (doc, score)
-            for doc, score in search_results_with_scores
-            if score <= (1 - adjusted_threshold)  # FAISS 거리 점수를 유사도로 변환
+            (doc, score) for doc, score in top_results if score >= similarity_threshold
         ]
+        if not filtered_results and similarity_threshold > 0.1:
+            logger.info("유사도 임계값을 자동 완화합니다.")
+            filtered_results = [
+                (doc, score) for doc, score in top_results if score >= 0.1
+            ]
 
         logger.info(
-            f"\n'{search_query}'에 대한 검색 결과 (총 {len(search_results_with_scores)}개 중 {len(filtered_results)}개가 임계값 통과, 조정된 임계값: {adjusted_threshold:.2f}):"
+            f"\n'{search_query}'에 대한 검색 결과 (총 {len(top_results)}개 중 {len(filtered_results)}개가 임계값 통과, 임계값: {similarity_threshold:.2f}):"
         )
 
         if not filtered_results:
@@ -121,17 +146,14 @@ def search_and_rag(
             return "유사도가 충분히 높은 검색 결과가 없습니다."
 
         for i, (doc, score) in enumerate(filtered_results):
-            similarity_percent = (1 - score) * 100  # 거리 점수를 유사도(%)로 변환
             logger.info(
-                f"  {i+1}. 유사도: {similarity_percent:.1f}%, 소스: {doc.metadata.get('source', '알 수 없음')}, 내용 (일부): {doc.page_content[:100]}..."
+                f"  {i+1}. 유사도: {score*100:.1f}%, 소스: {doc.metadata.get('source', '알 수 없음')}, 내용 (일부): {doc.page_content[:100]}..."
             )
 
-        # RAG 프롬프트 구성 (타입별 최적화)
         context_for_rag = "\n\n".join(
             [doc.page_content for doc, score in filtered_results]
         )
 
-        # 프롬프트 모듈에서 적절한 프롬프트 가져오기
         if target_index == "code":
             prompt = prompts.get_code_rag_prompt(context_for_rag, search_query)
         else:
@@ -143,11 +165,10 @@ def search_and_rag(
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
 
         logger.info("RAG 답변 생성 완료.")
-        return response.text
+        answer_text = gemini_service.extract_text_from_response(response)
+        return answer_text
 
-    except (
-        EmbeddingError
-    ) as e_embed_query_fail:  # 이 예외는 현재 코드에서 발생하지 않을 수 있음 (주로 GeminiAPIEmbeddings 클래스에서 발생)
+    except EmbeddingError as e_embed_query_fail:
         logger.error(
             f"'{target_index.capitalize()}' 인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}"
         )

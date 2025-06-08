@@ -22,7 +22,7 @@ class Config:
     GEMINI_API_KEY2 = env_vars.get("GEMINI_API_KEY2") or os.getenv("GEMINI_API_KEY2")
 
     # 모델 이름 (지정된 최신 모델, 변경 주의)
-    DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-exp-03-07"
+    DEFAULT_EMBEDDING_MODEL = "models/text-embedding-004"
     DEFAULT_LLM_MODEL = "gemini-2.5-flash-preview-05-20"
 
     # 디렉토리 경로
@@ -31,17 +31,16 @@ class Config:
     FAISS_INDEX_DOCS_DIR = "faiss_indexes_docs"
 
     # 인덱싱 및 임베딩 설정
-    CHUNK_SIZE = 4000  # RecursiveCharacterTextSplitter 청크 크기 (문서 분할 시)
-    CHUNK_OVERLAP = 400  # RecursiveCharacterTextSplitter 청크 오버랩 (문서 분할 시)
+    CHUNK_SIZE = 2000  # 의미 단위로 분할
+    CHUNK_OVERLAP = 500  # 문맥 보존 강화
     EMBEDDING_BATCH_SIZE = 50  # Gemini API 임베딩 요청 시 배치 크기
     FAISS_ADD_BATCH_SIZE = 100  # FAISS 인덱스에 문서 추가 시 배치 크기
     MAX_RETRIES = 10  # API 호출 최대 재시도 횟수
-    EMBEDDING_DIMENSION = 768  # 임베딩 벡터 차원 설정
+    EMBEDDING_DIMENSION = 1024  # 임베딩 벡터 차원 설정
 
     # API 오류별 대기 시간 설정 (초 단위)
-    QUOTA_ERROR_SLEEP_TIME = 30  # 할당량 오류 시 대기 시간
-    GENERAL_API_ERROR_SLEEP_TIME = 30  # 일반 API 오류 시 대기 시간
-    SUCCESS_SLEEP_TIME = 60  # 성공적인 임베딩 후 대기 시간
+    QUOTA_ERROR_SLEEP_TIME = 5  # 할당량 오류 시 대기 시간
+    GENERAL_API_ERROR_SLEEP_TIME = 3  # 일반 API 오류 시 대기 시간
 
     # 문서 파일 확장자
     DOCUMENT_FILE_EXTENSIONS = (".md", ".markdown", ".rst", ".txt")
@@ -51,8 +50,8 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # 검색 설정
-    DEFAULT_TOP_K = 5  # 코드 검색을 위해 증가
-    DEFAULT_SIMILARITY_THRESHOLD = 0.5  # 코드 검색을 위해 완화
+    DEFAULT_TOP_K = 10
+    DEFAULT_SIMILARITY_THRESHOLD = 0.3
 
     # API 서비스 설정 추가
     API_VERSION = "v1"
