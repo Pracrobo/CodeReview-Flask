@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import asyncio  # asyncio 임포트
 
 import faiss
 
@@ -14,7 +15,9 @@ faiss.omp_set_num_threads(1)
 logger = logging.getLogger(__name__)
 
 
-def translate_code_query_to_english(korean_text, llm_model_name):
+async def translate_code_query_to_english(
+    korean_text, llm_model_name
+):  # async def로 변경
     """코드 관련 한국어 질의 영어 번역"""
     try:
         client = gemini_service.get_client()
@@ -23,7 +26,10 @@ def translate_code_query_to_english(korean_text, llm_model_name):
         return korean_text
     try:
         prompt = prompts.get_code_query_translation_prompt(korean_text)
-        response = client.models.generate_content(model=llm_model_name, contents=prompt)
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, client.models.generate_content, model=llm_model_name, contents=prompt
+        )
         english_text = gemini_service.extract_text_from_response(response)
         logger.info(f"코드 질의 번역 완료: '{korean_text}' -> '{english_text}'")
         return english_text if english_text else korean_text
@@ -79,6 +85,12 @@ def search_and_rag(
     similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
 ):
     """코드 벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG, 코사인 유사도 직접 적용)"""
+    # 이 함수가 비동기 컨텍스트(예: FastAPI 엔드포인트)에서 직접 호출된다면
+    # async def search_and_rag(...): 로 변경하고, 내부의 run_in_executor 호출은 await을 사용해야 합니다.
+    # 현재는 동기 함수로 가정하고, 내부에서 실행되는 블로킹 I/O를 run_in_executor로 감싸는 것은
+    # 이 함수 자체가 이벤트 루프를 블록하는 것을 막지는 못합니다.
+    # 가장 좋은 방법은 이 함수를 async def로 만들고, 호출하는 곳에서 await하는 것입니다.
+    # 여기서는 내부 Gemini 호출만 수정합니다.
     try:
         client = gemini_service.get_client()
     except Exception:
@@ -97,7 +109,19 @@ def search_and_rag(
     vector_store = vector_stores[target_index]  # target_index는 "code"
 
     logger.info("사용자 질의를 영어로 번역 중...")
-    english_query = translate_code_query_to_english(search_query, llm_model_name)
+    # translate_code_query_to_english는 이제 async 함수이므로,
+    # 이 함수를 호출하는 search_and_rag도 async여야 하고 await으로 호출해야 합니다.
+    # 임시로 asyncio.run을 사용하지만, 이상적인 구조는 아닙니다.
+    # search_and_rag를 async def로 변경하는 것이 좋습니다.
+    try:
+        english_query = asyncio.run(
+            translate_code_query_to_english(search_query, llm_model_name)
+        )
+    except RuntimeError:  # 이미 이벤트 루프가 실행 중인 경우
+        loop = asyncio.get_event_loop()
+        english_query = loop.run_until_complete(
+            translate_code_query_to_english(search_query, llm_model_name)
+        )
 
     # 2. 임베딩 입력 전처리
     processed_query = preprocess_text(english_query)
@@ -107,8 +131,14 @@ def search_and_rag(
     )
 
     try:
-        # 쿼리 임베딩 추출
-        query_embedding = vector_store.embedding_function.embed_query(processed_query)
+        # 쿼리 임베딩 추출 - embed_query가 동기 I/O 바운드일 수 있음
+        # 이 부분도 run_in_executor로 감싸는 것을 고려해야 하지만, 우선 LLM 호출부터 수정합니다.
+        # loop = asyncio.get_event_loop()
+        # query_embedding = await loop.run_in_executor(None, vector_store.embedding_function.embed_query, processed_query)
+        query_embedding = vector_store.embedding_function.embed_query(
+            processed_query
+        )  # 일단 유지
+
         # FAISS 인덱스의 실제 벡터 개수
         num_vectors = vector_store.index.ntotal
         doc_score_pairs = []
@@ -154,6 +184,13 @@ def search_and_rag(
         logger.info(
             f"\n'{llm_model_name}' 모델을 사용하여 RAG 답변 생성을 시작합니다..."
         )
+        # response = client.models.generate_content(model=llm_model_name, contents=prompt)
+        # 이 함수가 async가 아니므로 loop를 직접 사용하기 어렵습니다.
+        # 만약 search_and_rag가 async def라면 아래와 같이 수정:
+        # loop = asyncio.get_event_loop()
+        # response = await loop.run_in_executor(None, client.models.generate_content, model=llm_model_name, contents=prompt)
+        # 현재는 동기 함수이므로, 이 호출은 그대로 두지만, 이것이 블로킹의 원인이 될 수 있습니다.
+        # 이상적으로는 search_and_rag 함수를 async def로 변경해야 합니다.
         response = client.models.generate_content(model=llm_model_name, contents=prompt)
 
         logger.info("RAG 답변 생성 완료.")

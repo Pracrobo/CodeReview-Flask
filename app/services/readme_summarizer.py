@@ -3,6 +3,7 @@
 import logging
 import re
 from typing import Optional
+import asyncio  # asyncio 임포트
 
 from google.genai import types
 
@@ -48,7 +49,9 @@ class ReadmeSummarizer:
 
         return content.strip()
 
-    def summarize_readme(self, repo_name: str, readme_content: str) -> Optional[str]:
+    async def summarize_readme(
+        self, repo_name: str, readme_content: str
+    ) -> Optional[str]:  # async def로 변경
         """README 내용을 요약합니다.
 
         Args:
@@ -89,6 +92,7 @@ class ReadmeSummarizer:
 
             # Gemini API 호출
             client = self._get_client()
+            loop = asyncio.get_event_loop()
 
             for attempt in range(self.max_retries):
                 try:
@@ -99,7 +103,9 @@ class ReadmeSummarizer:
                         f"'{repo_name}' 저장소 README 요약 API 호출 시도 ({attempt + 1}/{self.max_retries})"
                     )
 
-                    response = client.models.generate_content(
+                    response = await loop.run_in_executor(  # 비동기 호출로 변경
+                        None,
+                        client.models.generate_content,
                         model=self.llm_model,
                         contents=prompt,
                         config=types.GenerateContentConfig(
