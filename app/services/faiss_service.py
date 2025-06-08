@@ -35,7 +35,7 @@ class FAISSService:
         Args:
             documents: 인덱싱할 문서 리스트
             index_path: 인덱스 저장 경로
-            index_type: 인덱스 타입 ("code" 또는 "document")
+            index_type: 인덱스 타입 ("code")
 
         Returns:
             생성된 FAISS 벡터 스토어 또는 None
@@ -84,7 +84,7 @@ class FAISSService:
 
         Args:
             index_path: 인덱스 경로
-            index_type: 인덱스 타입
+            index_type: 인덱스 타입 ("code")
 
         Returns:
             로드된 FAISS 벡터 스토어 또는 None

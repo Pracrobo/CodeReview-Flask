@@ -28,7 +28,6 @@ class Config:
     # 디렉토리 경로
     BASE_CLONED_DIR = "./cloned_repos"
     FAISS_INDEX_BASE_DIR = "faiss_indexes"
-    FAISS_INDEX_DOCS_DIR = "faiss_indexes_docs"
 
     # 인덱싱 및 임베딩 설정
     CHUNK_SIZE = 2000  # 의미 단위로 분할
@@ -41,9 +40,6 @@ class Config:
     # API 오류별 대기 시간 설정 (초 단위)
     QUOTA_ERROR_SLEEP_TIME = 5  # 할당량 오류 시 대기 시간
     GENERAL_API_ERROR_SLEEP_TIME = 3  # 일반 API 오류 시 대기 시간
-
-    # 문서 파일 확장자
-    DOCUMENT_FILE_EXTENSIONS = (".md", ".markdown", ".rst", ".txt")
 
     # 로깅 설정
     LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL

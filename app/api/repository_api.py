@@ -96,8 +96,8 @@ repo_search_request = api.model(
         ),
         "search_type": fields.String(
             required=False,
-            description="검색 유형 (code 또는 document)",
-            enum=["code", "document", "doc"],
+            description="검색 유형 (code만 지원)",
+            enum=["code"],
             default="code",
             example="code",
         ),
@@ -345,17 +345,24 @@ class RepositorySearch(Resource):
     @repository_ns.response(404, "인덱스 없음", error_model)  # INDEX_NOT_FOUND 경우
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
-        """저장소에서 코드 또는 문서 검색"""
+        """저장소에서 코드 검색"""
         data = {}
         try:
             data = request.get_json()
             repo_name, query, search_type = validate_search_request(data)
-            # repo_url = f"https://github.com/{repo_name}" # Service에서 repo_name 대신 repo_url을 받도록 변경 고려
+
+            # search_type은 이제 항상 "code" 또는 기본값 "code"
+            if search_type != "code":
+                # 혹시 다른 값이 들어올 경우를 대비한 방어 코드 (validate_search_request에서 처리될 수도 있음)
+                logger.warning(
+                    f"지원하지 않는 search_type: {search_type}. 'code'로 강제합니다."
+                )
+                search_type = "code"
 
             log_payload = {
                 "repo_name": repo_name,
                 "query": query,
-                "search_type": search_type,
+                "search_type": search_type,  # 항상 "code"
             }
             logger.info(
                 f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}"
@@ -363,7 +370,9 @@ class RepositorySearch(Resource):
 
             # SearchService의 메서드 호출
             result = search_service.search_repository(
-                f"https://github.com/{repo_name}", query, search_type
+                f"https://github.com/{repo_name}",
+                query,
+                search_type,  # search_type은 "code"
             )
 
             message = "검색이 완료되었습니다."

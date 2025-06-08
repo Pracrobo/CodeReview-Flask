@@ -31,26 +31,6 @@ def translate_code_query_to_english(korean_text, llm_model_name):
         return korean_text
 
 
-def translate_to_english(korean_text, llm_model_name):
-    """일반 한국어 텍스트 영어 번역"""
-    try:
-        client = gemini_service.get_client()
-    except Exception:
-        logger.error("Gemini 클라이언트가 초기화되지 않아 번역을 건너뜁니다.")
-        return korean_text
-    try:
-        prompt = prompts.get_general_translation_prompt(
-            korean_text, target_language="en"
-        )
-        response = client.models.generate_content(model=llm_model_name, contents=prompt)
-        english_text = gemini_service.extract_text_from_response(response)
-        logger.info(f"번역 완료: '{korean_text}' -> '{english_text}'")
-        return english_text if english_text else korean_text
-    except Exception as e:
-        logger.warning(f"번역 실패, 원본 텍스트 사용: {e}")
-        return korean_text
-
-
 def preprocess_text(text):
     """임베딩 입력 전처리(공백, 특수문자, 소문자 변환 등)"""
     import re
@@ -78,37 +58,38 @@ def cosine_similarity(vec1, vec2):
 
 def search_and_rag(
     vector_stores,
-    target_index,  # "code" 또는 "document"
+    target_index,  # "code"만 지원
     search_query,
     llm_model_name,
     top_k=Config.DEFAULT_TOP_K,
     similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
 ):
-    """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG, 코사인 유사도 직접 적용)"""
+    """코드 벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG, 코사인 유사도 직접 적용)"""
     try:
         client = gemini_service.get_client()
     except Exception:
         raise RAGError("Gemini 클라이언트가 초기화되지 않아 RAG를 수행할 수 없습니다.")
 
-    if target_index not in vector_stores or not vector_stores[target_index]:
+    if (
+        target_index != "code"
+        or target_index not in vector_stores
+        or not vector_stores[target_index]
+    ):
         logger.warning(
-            f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
+            f"'{target_index}' 벡터 저장소를 사용할 수 없거나 지원되지 않는 타입입니다. 코드 검색만 지원됩니다."
         )
         return None
 
-    vector_store = vector_stores[target_index]
+    vector_store = vector_stores[target_index]  # target_index는 "code"
 
     logger.info("사용자 질의를 영어로 번역 중...")
-    if target_index == "code":
-        english_query = translate_code_query_to_english(search_query, llm_model_name)
-    else:
-        english_query = translate_to_english(search_query, llm_model_name)
+    english_query = translate_code_query_to_english(search_query, llm_model_name)
 
     # 2. 임베딩 입력 전처리
     processed_query = preprocess_text(english_query)
 
     logger.info(
-        f"\n'{target_index.capitalize()}' 인덱스에 대한 의미론적 검색을 시작합니다 (Top K: {top_k}, 유사도 임계값: {similarity_threshold})..."
+        f"\n인덱스에 대한 의미론적 검색을 시작합니다 (Top K: {top_k}, 유사도 임계값: {similarity_threshold})..."
     )
 
     try:
@@ -154,10 +135,7 @@ def search_and_rag(
             [doc.page_content for doc, score in filtered_results]
         )
 
-        if target_index == "code":
-            prompt = prompts.get_code_rag_prompt(context_for_rag, search_query)
-        else:
-            prompt = prompts.get_document_rag_prompt(context_for_rag, search_query)
+        prompt = prompts.get_code_rag_prompt(context_for_rag, search_query)
 
         logger.info(
             f"\n'{llm_model_name}' 모델을 사용하여 RAG 답변 생성을 시작합니다..."
@@ -169,16 +147,12 @@ def search_and_rag(
         return answer_text
 
     except EmbeddingError as e_embed_query_fail:
-        logger.error(
-            f"'{target_index.capitalize()}' 인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}"
-        )
+        logger.error(f"인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}")
         logger.error("유사도 검색 및 RAG를 진행할 수 없습니다.")
-        return f"{target_index.capitalize()} 인덱스 검색 중 오류가 발생했습니다: 임베딩 실패"
+        return "인덱스 검색 중 오류가 발생했습니다: 임베딩 실패"
     except Exception as e_rag:
         logger.error(
-            f"'{target_index.capitalize()}' 유사도 검색 또는 RAG 중 예기치 않은 오류 발생: {e_rag}",
+            f"유사도 검색 또는 RAG 중 예기치 않은 오류 발생: {e_rag}",
             exc_info=True,
         )
-        raise RAGError(
-            f"'{target_index.capitalize()}' 검색 또는 RAG 처리 중 오류 발생: {e_rag}"
-        ) from e_rag
+        raise RAGError(f"검색 또는 RAG 처리 중 오류 발생: {e_rag}") from e_rag

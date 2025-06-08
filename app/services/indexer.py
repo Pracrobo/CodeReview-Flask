@@ -39,14 +39,14 @@ class RepositoryIndexer:
     def create_indexes_from_repository(
         self, repo_url: str, progress_callback=None
     ) -> Dict[str, Optional[object]]:
-        """저장소로부터 코드 및 문서 인덱스를 생성합니다.
+        """저장소로부터 코드 인덱스를 생성합니다.
 
         Args:
             repo_url: GitHub 저장소 URL
             progress_callback: 진행 상황 콜백 함수 (선택사항)
 
         Returns:
-            생성된 벡터 스토어들의 딕셔너리 {"code": vector_store, "document": vector_store}
+            생성된 코드 벡터 스토어 딕셔너리 {"code": vector_store}
 
         Raises:
             RepositoryError: 저장소 관련 오류
@@ -54,7 +54,7 @@ class RepositoryIndexer:
             RepositorySizeError: 저장소 크기 초과 오류
         """
         start_time = time.time()
-        vector_stores = {"code": None, "document": None}
+        vector_stores = {"code": None}
 
         try:
             # 1. 저장소 정보 확인
@@ -76,13 +76,6 @@ class RepositoryIndexer:
                 progress_callback("code_indexing", "코드 인덱싱 시작")
             vector_stores["code"] = self._create_code_index(
                 local_path, repo_name, primary_language, progress_callback
-            )
-
-            # 4. 문서 인덱싱
-            if progress_callback:
-                progress_callback("document_indexing", "문서 인덱싱 시작")
-            vector_stores["document"] = self._create_document_index(
-                local_path, repo_name, progress_callback
             )
 
             return vector_stores
@@ -159,53 +152,6 @@ class RepositoryIndexer:
             progress_callback("code_embedding", "code FAISS 인덱스 생성 시작")
         return self.faiss_service.create_index_from_documents(
             split_documents, index_path, "code"
-        )
-
-    def _create_document_index(
-        self, local_path: str, repo_name: str, progress_callback=None
-    ) -> Optional[object]:
-        """문서 인덱스를 생성합니다.
-
-        Args:
-            local_path: 로컬 저장소 경로
-            repo_name: 저장소 이름
-            progress_callback: 진행 상황 콜백 함수 (선택사항)
-
-        Returns:
-            생성된 문서 벡터 스토어 또는 None
-        """
-        logger.info("=== 문서 인덱싱 시작 ===")
-
-        # 인덱스 경로 설정
-        from app.core.utils import get_faiss_index_path
-
-        index_path = get_faiss_index_path(repo_name, "document")
-
-        # 기존 인덱스 확인
-        existing_index = self.faiss_service.load_index(index_path, "document")
-        if existing_index:
-            logger.info("기존 문서 인덱스를 사용합니다.")
-            return existing_index
-
-        # 문서 파일 로드 (최대 깊이 1로 제한)
-        if progress_callback:
-            progress_callback("document_loading", "문서 파일 로드 중")
-        documents = self.document_loader.load_documents_from_directory(
-            local_path, Config.DOCUMENT_FILE_EXTENSIONS, max_depth=1
-        )
-
-        if not documents:
-            logger.warning("인덱싱할 문서 파일을 찾지 못했습니다.")
-            return None
-
-        # 문서 분할
-        split_documents = self.document_loader.split_documents_as_text(documents)
-
-        # FAISS 인덱스 생성
-        if progress_callback:
-            progress_callback("document_embedding", "document FAISS 인덱스 생성 시작")
-        return self.faiss_service.create_index_from_documents(
-            split_documents, index_path, "document"
         )
 
 
