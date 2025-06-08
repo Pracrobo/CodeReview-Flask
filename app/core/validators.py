@@ -1,6 +1,7 @@
 """요청 데이터 검증 유틸리티 모듈"""
 
 import re
+
 # 수정: 예외 클래스 임포트 경로 변경
 from .exceptions import ValidationError
 
@@ -97,4 +98,4 @@ def validate_search_request(data):
     if search_type == "doc":
         search_type = "document"
 
-    return repo_name, query, search_type 
+    return repo_name, query, search_type

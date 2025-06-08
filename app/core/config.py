@@ -4,7 +4,9 @@ from langchain_text_splitters import Language
 import warnings
 
 # .env 환경 변수 로드 - 명시적 경로 지정
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+env_path = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"
+)
 load_dotenv(dotenv_path=env_path)
 
 # .env 파일에서 환경 변수 직접 로드
@@ -85,8 +87,8 @@ if not Config.GEMINI_API_KEY1 or not Config.GEMINI_API_KEY2:
     warnings.warn(
         "Gemini API 키(GEMINI_API_KEY1 또는 GEMINI_API_KEY2)가 .env 파일이나 환경 변수에 설정되어 있지 않습니다. "
         "일부 기능(예: 임베딩) 사용이 제한될 수 있습니다.",
-        UserWarning
+        UserWarning,
     )
     # API 키가 없어도 서버가 시작되도록 기본값 설정
     Config.GEMINI_API_KEY1 = Config.GEMINI_API_KEY1 or "dummy_key_1"
-    Config.GEMINI_API_KEY2 = Config.GEMINI_API_KEY2 or "dummy_key_2" 
+    Config.GEMINI_API_KEY2 = Config.GEMINI_API_KEY2 or "dummy_key_2"

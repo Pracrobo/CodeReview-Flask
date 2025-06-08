@@ -3,7 +3,6 @@ import threading
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 
-from app.core.config import Config
 from app.core.utils import (
     extract_repo_name_from_url, 
     get_local_repo_path, 
