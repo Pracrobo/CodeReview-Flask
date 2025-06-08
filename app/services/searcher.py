@@ -16,10 +16,12 @@ logger = logging.getLogger(__name__)
 try:
     api_key_to_use = Config.GEMINI_API_KEY1
     logger.info(f"Gemini 클라이언트 초기화를 시도합니다. API 키: '{api_key_to_use}'")
-    
+
     # API 키가 dummy 값인지 확인
     if not api_key_to_use or api_key_to_use == "dummy_key_1":
-        logger.warning("GEMINI_API_KEY1이 설정되지 않았거나 dummy 값입니다. 클라이언트를 None으로 설정합니다.")
+        logger.warning(
+            "GEMINI_API_KEY1이 설정되지 않았거나 dummy 값입니다. 클라이언트를 None으로 설정합니다."
+        )
         client = None
     else:
         client = genai.Client(api_key=api_key_to_use)
@@ -27,6 +29,7 @@ try:
 except Exception as e:
     logger.error(f"Gemini 클라이언트 초기화 실패: {e}. API 키 설정을 확인하세요.")
     client = None
+
 
 def translate_code_query_to_english(korean_text, llm_model_name):
     """코드 관련 한국어 질의 영어 번역"""
@@ -71,12 +74,12 @@ def search_and_rag(
     """벡터 저장소 검색 및 LLM 기반 답변 생성 (RAG)"""
     if not client:
         raise RAGError("Gemini 클라이언트가 초기화되지 않아 RAG를 수행할 수 없습니다.")
-        
+
     if target_index not in vector_stores or not vector_stores[target_index]:
         logger.warning(
             f"{target_index.capitalize()} 벡터 저장소를 사용할 수 없습니다. 검색 및 RAG를 건너뜁니다."
         )
-        return None # 또는 "관련 인덱스를 찾을 수 없습니다." 와 같은 메시지 반환 고려
+        return None  # 또는 "관련 인덱스를 찾을 수 없습니다." 와 같은 메시지 반환 고려
 
     vector_store = vector_stores[target_index]
 
@@ -142,7 +145,9 @@ def search_and_rag(
         logger.info("RAG 답변 생성 완료.")
         return response.text
 
-    except EmbeddingError as e_embed_query_fail: # 이 예외는 현재 코드에서 발생하지 않을 수 있음 (주로 GeminiAPIEmbeddings 클래스에서 발생)
+    except (
+        EmbeddingError
+    ) as e_embed_query_fail:  # 이 예외는 현재 코드에서 발생하지 않을 수 있음 (주로 GeminiAPIEmbeddings 클래스에서 발생)
         logger.error(
             f"'{target_index.capitalize()}' 인덱스에 대한 쿼리 임베딩 중 오류 발생: {e_embed_query_fail}"
         )
@@ -155,4 +160,4 @@ def search_and_rag(
         )
         raise RAGError(
             f"'{target_index.capitalize()}' 검색 또는 RAG 처리 중 오류 발생: {e_rag}"
-        ) from e_rag 
+        ) from e_rag
