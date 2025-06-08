@@ -92,6 +92,88 @@ README:
 요약:
 """
 
+    # ===== 이슈 관련 프롬프트 =====
+
+    @staticmethod
+    def get_issue_to_question_prompt(issue_title: str, issue_body: str) -> str:
+        """이슈 내용을 검색용 질문으로 변환하는 프롬프트"""
+        return f"""
+다음 GitHub 이슈의 제목과 내용을 분석하여 코드 검색에 적합한 질문 형태로 변환해주세요.
+변환된 질문은 관련 코드를 찾는데 최적화되어야 합니다.
+
+이슈 제목: {issue_title}
+
+이슈 내용:
+{issue_body}
+
+위 이슈를 바탕으로 관련 코드를 검색하기 위한 구체적인 질문을 영어로 작성해주세요.
+질문만 출력하고 다른 설명은 하지 마세요.
+
+검색 질문:
+"""
+
+    @staticmethod
+    def get_ai_solution_suggestion_prompt(
+        issue_title: str, issue_body: str, related_files: list, code_snippets: list
+    ) -> str:
+        """AI 해결 제안을 생성하는 프롬프트"""
+        files_info = "\n".join(
+            [
+                f"- {file['path']} (관련도: {file['relevance']}%)"
+                for file in related_files
+            ]
+        )
+
+        snippets_info = "\n\n".join(
+            [
+                f"파일: {snippet['file']}\n코드:\n{snippet['code']}\n관련도: {snippet['relevance']}%"
+                for snippet in code_snippets
+            ]
+        )
+
+        return f"""
+다음 GitHub 이슈에 대한 해결 제안을 한국어로 작성해주세요.
+제공된 관련 파일들과 코드 스니펫들을 참고하여 구체적이고 실용적인 해결 방안을 제시하세요.
+
+이슈 제목: {issue_title}
+
+이슈 내용:
+{issue_body}
+
+관련 파일들:
+{files_info}
+
+관련 코드 스니펫들:
+{snippets_info}
+
+위 정보를 바탕으로 이슈 해결을 위한 구체적인 제안을 작성해주세요:
+1. 문제 원인 분석
+2. 해결 방법 제시
+3. 수정이 필요한 파일과 구체적인 방법
+4. 주의사항 및 추가 고려사항
+
+해결 제안:
+"""
+
+    @staticmethod
+    def get_issue_summary_prompt(issue_title: str, issue_body: str) -> str:
+        """이슈 내용을 요약하는 프롬프트"""
+        return f"""
+다음 GitHub 이슈의 제목과 내용을 분석하여 핵심 내용을 한국어로 간결하게 요약해주세요.
+
+이슈 제목: {issue_title}
+
+이슈 내용:
+{issue_body}
+
+요약 지침:
+- 핵심 문제점과 현상을 명확히 기술
+- 기술적 세부사항 포함
+- 2-3문장으로 간결하게 작성
+
+이슈 요약:
+"""
+
     # ===== 프롬프트 설정 관리 =====
 
     @staticmethod
@@ -162,3 +244,22 @@ def get_document_rag_prompt(context: str, question: str) -> str:
 def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
     """README 요약 프롬프트 (하위 호환성)"""
     return prompts.get_readme_summary_prompt(repo_name, readme_content)
+
+
+def get_issue_to_question_prompt(issue_title: str, issue_body: str) -> str:
+    """이슈를 질문으로 변환하는 프롬프트 (하위 호환성)"""
+    return prompts.get_issue_to_question_prompt(issue_title, issue_body)
+
+
+def get_ai_solution_suggestion_prompt(
+    issue_title: str, issue_body: str, related_files: list, code_snippets: list
+) -> str:
+    """AI 해결 제안 프롬프트 (하위 호환성)"""
+    return prompts.get_ai_solution_suggestion_prompt(
+        issue_title, issue_body, related_files, code_snippets
+    )
+
+
+def get_issue_summary_prompt(issue_title: str, issue_body: str) -> str:
+    """이슈 요약 프롬프트 (하위 호환성)"""
+    return prompts.get_issue_summary_prompt(issue_title, issue_body)

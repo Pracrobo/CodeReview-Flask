@@ -30,7 +30,9 @@ class ReadmeSummarizer:
         """Gemini API 클라이언트 가져오기"""
         return gemini_service.get_client()
 
-    def _clean_readme_content(self, content: str, repo_name: str) -> str:
+    def _clean_readme_content(
+        self, content: str, repo_name: str
+    ) -> str:  # repo_name 인자 추가
         """README 내용 전처리"""
         if not content:
             return ""
@@ -44,10 +46,7 @@ class ReadmeSummarizer:
         # 배지(badge) 제거
         content = re.sub(r"\[!\[.*?\]\(.*?\)\]\(.*?\)", "", content)
 
-        # 불필요한 공백 정리
-        content = re.sub(r"\n{3,}", "\n\n", content)
-        content = content.strip()
-        return content
+        return content.strip()
 
     def summarize_readme(self, repo_name: str, readme_content: str) -> Optional[str]:
         """README 내용을 요약합니다.

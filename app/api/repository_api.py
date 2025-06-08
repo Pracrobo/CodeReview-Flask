@@ -8,7 +8,6 @@ from ..services.status_service import StatusService
 from ..services.indexing_service import IndexingService
 from ..services.search_service import SearchService
 from ..services.readme_summarizer import ReadmeSummarizer
-from ..services.searcher import analyze_issue_with_rag
 
 from ..core.exceptions import ServiceError, ValidationError
 from ..core.response_utils import (
@@ -876,20 +875,3 @@ class Translation(Resource):
             return error_response(
                 message=error_message, error_code=error_code, status_code=status_code
             )
-
-
-@repository_ns.route("/analyze-issue")
-class AnalyzeIssue(Resource):
-    def post(self):
-        """이슈 본문을 질문으로 변환 후 코드 검색 및 AI 분석"""
-        try:
-            data = request.get_json()
-            repo_name = data.get("repo_name")
-            issue_title = data.get("issue_title")
-            issue_body = data.get("issue_body")
-            if not repo_name or not issue_body:
-                return {"status": "error", "message": "필수 파라미터 누락"}, 400
-            result = analyze_issue_with_rag(repo_name, issue_title, issue_body)
-            return {"status": "success", "data": result}, 200
-        except Exception as e:
-            return {"status": "error", "message": str(e)}, 500

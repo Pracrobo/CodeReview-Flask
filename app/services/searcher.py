@@ -7,6 +7,7 @@ from app.core.config import Config
 from app.core.exceptions import EmbeddingError, RAGError
 from app.core.prompts import prompts
 from app.services.gemini_service import gemini_service
+from app.services.issue_analyzer import issue_analyzer
 
 faiss.omp_set_num_threads(1)
 
@@ -54,6 +55,19 @@ def cosine_similarity(vec1, vec2):
     v1 = normalize_vector(vec1)
     v2 = normalize_vector(vec2)
     return float(np.dot(v1, v2))
+
+
+async def analyze_issue_and_generate_insights(
+    vector_stores,
+    issue_data,  # {'title': str, 'body': str, 'issueId': int}
+):
+    """이슈 분석 및 AI 인사이트 생성"""
+    try:
+        result = await issue_analyzer.analyze_issue(vector_stores, issue_data)
+        return result
+    except Exception as e:
+        logger.error(f"이슈 분석 중 오류 발생: {e}", exc_info=True)
+        raise RAGError(f"이슈 분석 실패: {e}") from e
 
 
 def search_and_rag(
@@ -156,84 +170,3 @@ def search_and_rag(
             exc_info=True,
         )
         raise RAGError(f"검색 또는 RAG 처리 중 오류 발생: {e_rag}") from e_rag
-
-
-def analyze_issue_with_rag(repo_name, issue_title, issue_body):
-    """이슈 본문을 질문으로 변환 후 코드 검색 및 AI 분석"""
-    client = gemini_service.get_client()
-    # 1. 이슈 본문을 질문 형태로 변환
-    prompt = prompts.get_issue_to_question_prompt(issue_title, issue_body)
-    question = gemini_service.extract_text_from_response(
-        client.models.generate_content(model="gemini-pro", contents=prompt)
-    )
-    # 2. 코드 임베딩 검색 (기존 search_and_rag 활용)
-    vector_stores = load_vector_stores(repo_name)  # 벡터스토어 로드 함수 필요
-    code_answer = search_and_rag(
-        vector_stores,
-        "code",
-        question,
-        "gemini-pro",
-        top_k=5,
-        similarity_threshold=0.2,
-    )
-    # 3. AI 요약/제안 생성
-    summary_prompt = prompts.get_issue_ai_summary_prompt(
-        issue_title, issue_body, code_answer
-    )
-    summary = gemini_service.extract_text_from_response(
-        client.models.generate_content(model="gemini-pro", contents=summary_prompt)
-    )
-    # 4. 코드 스니펫/파일 추출 (예시)
-    code_snippets = extract_code_snippets_from_answer(code_answer)
-    files = extract_files_from_answer(code_answer)
-    suggestion_prompt = prompts.get_issue_ai_suggestion_prompt(
-        issue_title, issue_body, code_answer
-    )
-    suggestion = gemini_service.extract_text_from_response(
-        client.models.generate_content(model="gemini-pro", contents=suggestion_prompt)
-    )
-    return {
-        "summary": summary,
-        "codeSnippets": code_snippets[:2],
-        "files": files[:3],
-        "suggestion": suggestion,
-        "labels": [],  # 필요시 추가
-    }
-
-
-def extract_code_snippets_from_answer(answer):
-    # 실제 코드 스니펫 추출 로직 필요 (예시: 코드 블록 파싱)
-    import re
-
-    if not answer:
-        return []
-    code_blocks = re.findall(r"```(?:[a-zA-Z0-9]*)?\n([\s\S]*?)```", answer)
-    result = []
-    for idx, code in enumerate(code_blocks):
-        result.append(
-            {
-                "file": f"코드스니펫_{idx+1}.py",
-                "code": code.strip(),
-                "relevance": 100,
-                "explanation": "",
-                "functionName": "",
-                "className": "",
-            }
-        )
-    return result
-
-
-def extract_files_from_answer(answer):
-    # 실제 파일명 추출 로직 필요 (예시: 파일명 패턴 파싱)
-    import re
-
-    if not answer:
-        return []
-    files = re.findall(r"(?:파일명|File):\s*([^\s]+)", answer)
-    return [{"path": f, "relevance": 100} for f in files]
-
-
-def load_vector_stores(repo_name):
-    # 실제 벡터스토어 로드 로직 필요 (여기서는 임시로 None 반환)
-    # 실제 구현에서는 repo_name을 기반으로 vector_stores를 반환해야 함
-    raise NotImplementedError("벡터스토어 로드 함수는 실제 구현 필요")
