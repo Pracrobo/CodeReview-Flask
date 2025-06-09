@@ -3,12 +3,11 @@
 import logging
 from typing import Optional
 
-from google import genai
 from google.genai import types
 
 from app.core.config import Config
-from app.core.exceptions import ServiceError
 from app.core.prompts import prompts
+from app.services.gemini_service import gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +30,7 @@ class Translator:
 
     def _get_client(self):
         """Gemini API 클라이언트 가져오기"""
-        if self._client is None:
-            try:
-                # 기본적으로 첫 번째 API 키 사용
-                api_key = Config.GEMINI_API_KEY1
-                if not api_key or api_key == "dummy_key_1":
-                    # 두 번째 API 키 시도
-                    api_key = Config.GEMINI_API_KEY2
-                    if not api_key or api_key == "dummy_key_2":
-                        raise ServiceError(
-                            "유효한 Gemini API 키가 설정되지 않았습니다."
-                        )
-
-                self._client = genai.Client(api_key=api_key)
-                logger.info("번역용 Gemini 클라이언트 초기화 완료")
-            except Exception as e:
-                raise ServiceError(f"Gemini API 클라이언트 생성 실패: {e}")
-
-        return self._client
+        return gemini_service.get_client()
 
     def translate_text(
         self, text: str, source_language: str = "auto", target_language: str = "ko"
@@ -94,9 +76,10 @@ class Translator:
                             temperature=self.temperature,
                         ),
                     )
-
                     # 응답에서 텍스트 추출
-                    translated_text = self._extract_text_from_response(response)
+                    translated_text = gemini_service.extract_text_from_response(
+                        response
+                    )
 
                     if translated_text:
                         logger.info(
@@ -141,38 +124,6 @@ class Translator:
 텍스트: {text}
 
 번역:"""
-
-    def _extract_text_from_response(self, response) -> Optional[str]:
-        """Gemini API 응답에서 텍스트 추출"""
-        try:
-            # 방법 1: 직접 text 속성 확인
-            if hasattr(response, "text") and response.text:
-                return response.text.strip()
-
-            # 방법 2: candidates 구조에서 추출
-            elif hasattr(response, "candidates") and response.candidates:
-                for candidate in response.candidates:
-                    if hasattr(candidate, "content") and candidate.content:
-                        if (
-                            hasattr(candidate.content, "parts")
-                            and candidate.content.parts
-                        ):
-                            for part in candidate.content.parts:
-                                if hasattr(part, "text") and part.text:
-                                    return part.text.strip()
-                        elif (
-                            hasattr(candidate.content, "text")
-                            and candidate.content.text
-                        ):
-                            return candidate.content.text.strip()
-                    elif hasattr(candidate, "text") and candidate.text:
-                        return candidate.text.strip()
-
-            return None
-
-        except Exception as e:
-            logger.error(f"응답 텍스트 추출 중 오류: {e}")
-            return None
 
     def _is_korean_text(self, text: str) -> bool:
         """텍스트가 한국어인지 간단히 판단"""

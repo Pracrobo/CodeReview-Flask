@@ -4,12 +4,12 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from google import genai
 from google.genai import types
 from langchain_core.embeddings import Embeddings
 
 from app.core.config import Config
 from app.core.exceptions import EmbeddingError
+from app.services.gemini_service import gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,57 +32,40 @@ class GeminiAPIEmbeddings(Embeddings):
     def _get_client(self):
         """필요할 때마다 새로운 클라이언트를 생성합니다."""
         try:
-            # 기본적으로 첫 번째 API 키 사용
-            api_key = Config.GEMINI_API_KEY1
-            if not api_key or api_key == "dummy_key_1":
-                # 두 번째 API 키 시도
-                api_key = Config.GEMINI_API_KEY2
-                if not api_key or api_key == "dummy_key_2":
-                    raise EmbeddingError("유효한 Gemini API 키가 설정되지 않았습니다.")
-
-            return genai.Client(api_key=api_key)
+            return gemini_service.get_client()
         except Exception as e:
             raise EmbeddingError(f"Gemini API 클라이언트 생성 실패: {e}")
 
     def _get_clients_for_batch(self, num_batches):
         """배치 처리용 클라이언트들을 생성합니다."""
         clients = []
-
-        # 사용 가능한 API 키들 수집
-        api_keys = []
-        if Config.GEMINI_API_KEY1 and Config.GEMINI_API_KEY1 != "dummy_key_1":
-            api_keys.append(Config.GEMINI_API_KEY1)
-        if Config.GEMINI_API_KEY2 and Config.GEMINI_API_KEY2 != "dummy_key_2":
-            api_keys.append(Config.GEMINI_API_KEY2)
-
+        api_keys = gemini_service.get_available_api_keys()
         if not api_keys:
             raise EmbeddingError("유효한 Gemini API 키가 설정되지 않았습니다.")
-
-        # 필요한 만큼 클라이언트 생성 (API 키 순환 사용)
         for i in range(min(num_batches, len(api_keys))):
             try:
-                client = genai.Client(api_key=api_keys[i])
+                client = gemini_service.get_client_with_key(api_keys[i])
                 clients.append(client)
             except Exception as e:
                 logger.warning(f"클라이언트 {i+1} 생성 실패: {e}")
-
         if not clients:
             raise EmbeddingError("사용 가능한 Gemini API 클라이언트가 없습니다.")
-
         return clients
 
-    def _calculate_sleep_time(self, is_quota_error):
-        """오류 유형별 API 재시도 대기 시간 계산"""
-        if is_quota_error:
-            logger.warning(
-                f"할당량 오류 발생. {Config.QUOTA_ERROR_SLEEP_TIME}초 후 재시도합니다."
-            )
-            return Config.QUOTA_ERROR_SLEEP_TIME
-        else:
-            logger.warning(
-                f"일시적인 API 오류 발생. {Config.GENERAL_API_ERROR_SLEEP_TIME}초 후 재시도합니다."
-            )
-            return Config.GENERAL_API_ERROR_SLEEP_TIME
+    def _calculate_sleep_time(self, is_quota_error, retries_count):
+        """오류 유형별 API 재시도 대기 시간 (지수 백오프 적용)"""
+        base_time = (
+            Config.QUOTA_ERROR_SLEEP_TIME
+            if is_quota_error
+            else Config.GENERAL_API_ERROR_SLEEP_TIME
+        )
+        sleep_time = base_time * (2 ** (retries_count - 1))
+        max_sleep = 60  # 최대 대기 1분 제한
+        sleep_time = min(sleep_time, max_sleep)
+        logger.warning(
+            f"{'할당량' if is_quota_error else '일반'} 오류 발생. {sleep_time}초 후 재시도합니다. (지수 백오프 적용)"
+        )
+        return sleep_time
 
     def _process_batch_with_client(
         self, client, batch_texts, batch_start_idx, batch_num, total_batches
@@ -106,13 +89,9 @@ class GeminiAPIEmbeddings(Embeddings):
 
                 with self.lock:
                     logger.debug(f"배치 {batch_num} 임베딩 성공 ({len(embeddings)}개)")
-                    if batch_num < total_batches:
-                        logger.info(
-                            f"성공적인 임베딩 후 {Config.SUCCESS_SLEEP_TIME}초 대기합니다."
-                        )
+                    # 성공 후 대기 코드 제거
 
-                if batch_num < total_batches:
-                    time.sleep(Config.SUCCESS_SLEEP_TIME)
+                # 성공 후 대기 없음
 
                 return {
                     "success": True,
@@ -130,7 +109,9 @@ class GeminiAPIEmbeddings(Embeddings):
 
                 is_quota_error = "429" in str(e)
                 if retries_count < self.max_retries:
-                    sleep_time = self._calculate_sleep_time(is_quota_error)
+                    sleep_time = self._calculate_sleep_time(
+                        is_quota_error, retries_count
+                    )
                     time.sleep(sleep_time)
                 else:
                     with self.lock:
@@ -248,7 +229,9 @@ class GeminiAPIEmbeddings(Embeddings):
                 )
                 is_quota_error = "429" in str(e_emb_query)
                 if retries_count < self.max_retries:
-                    sleep_time = self._calculate_sleep_time(is_quota_error)
+                    sleep_time = self._calculate_sleep_time(
+                        is_quota_error, retries_count
+                    )
                     time.sleep(sleep_time)
                 else:
                     detailed_error_info = traceback.format_exc()

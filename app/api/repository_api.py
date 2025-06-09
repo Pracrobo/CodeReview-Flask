@@ -96,8 +96,8 @@ repo_search_request = api.model(
         ),
         "search_type": fields.String(
             required=False,
-            description="검색 유형 (code 또는 document)",
-            enum=["code", "document", "doc"],
+            description="검색 유형 (code만 지원)",
+            enum=["code"],
             default="code",
             example="code",
         ),
@@ -345,17 +345,24 @@ class RepositorySearch(Resource):
     @repository_ns.response(404, "인덱스 없음", error_model)  # INDEX_NOT_FOUND 경우
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
-        """저장소에서 코드 또는 문서 검색"""
+        """저장소에서 코드 검색"""
         data = {}
         try:
             data = request.get_json()
             repo_name, query, search_type = validate_search_request(data)
-            # repo_url = f"https://github.com/{repo_name}" # Service에서 repo_name 대신 repo_url을 받도록 변경 고려
+
+            # search_type은 이제 항상 "code" 또는 기본값 "code"
+            if search_type != "code":
+                # 혹시 다른 값이 들어올 경우를 대비한 방어 코드 (validate_search_request에서 처리될 수도 있음)
+                logger.warning(
+                    f"지원하지 않는 search_type: {search_type}. 'code'로 강제합니다."
+                )
+                search_type = "code"
 
             log_payload = {
                 "repo_name": repo_name,
                 "query": query,
-                "search_type": search_type,
+                "search_type": search_type,  # 항상 "code"
             }
             logger.info(
                 f"API 요청 시작: [{request.method}] {request.path} (클라이언트 IP: {request.remote_addr}). 요청 데이터: {log_payload}"
@@ -363,7 +370,9 @@ class RepositorySearch(Resource):
 
             # SearchService의 메서드 호출
             result = search_service.search_repository(
-                f"https://github.com/{repo_name}", query, search_type
+                f"https://github.com/{repo_name}",
+                query,
+                search_type,  # search_type은 "code"
             )
 
             message = "검색이 완료되었습니다."
@@ -631,11 +640,11 @@ class ReadmeSummary(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """README 내용을 AI로 요약합니다. Express에서 호출되는 API."""
+        import asyncio  # 함수 내부에서 임포트
+
         data = {}
         try:
             data = request.get_json()
-
-            # 입력 데이터 검증 (간단한 검증 후 로깅, 상세 검증은 서비스 레이어에서)
             repo_name = data.get("repo_name")
             readme_content_length = len(data.get("readme_content", ""))
 
@@ -656,9 +665,7 @@ class ReadmeSummary(Resource):
                     message=error_message, error_code="MISSING_DATA", status_code=400
                 )
 
-            readme_content = data.get(
-                "readme_content"
-            )  # repo_name은 위에서 이미 가져옴
+            readme_content = data.get("readme_content")
 
             if not repo_name:
                 error_message = "저장소 이름이 필요합니다."
@@ -682,8 +689,10 @@ class ReadmeSummary(Resource):
                     status_code=400,
                 )
 
-            # README 요약 수행
-            summary = readme_summarizer.summarize_readme(repo_name, readme_content)
+            # README 요약 수행 (비동기 함수 동기 실행)
+            summary = asyncio.run(
+                readme_summarizer.summarize_readme(repo_name, readme_content)
+            )
 
             if summary:
                 response_data = {
@@ -700,7 +709,6 @@ class ReadmeSummary(Resource):
                     data=response_data, message=message, status_code=200
                 )
             else:
-                # 요약 실패 시 기본 설명 생성
                 fallback_description = readme_summarizer.create_fallback_description(
                     repo_name
                 )
@@ -716,7 +724,7 @@ class ReadmeSummary(Resource):
                 )
                 logger.warning(
                     f"README 요약 실패, 기본 설명 사용: {repo_name}. API 응답 메시지: {message}"
-                )  # 기존 로그 유지하며 추가 정보 제공
+                )
                 logger.info(
                     f"API 요청 성공 (대체 응답): [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}"
                 )
@@ -724,7 +732,7 @@ class ReadmeSummary(Resource):
                     data=response_data, message=message, status_code=200
                 )
 
-        except ValidationError as e:  # 이 경우는 보통 validate_xxx 함수에서 발생
+        except ValidationError as e:
             error_message = str(e)
             error_code = "VALIDATION_ERROR"
             status_code = 400

@@ -139,6 +139,7 @@ class SearchService:
             target_index=search_type,
             search_query=query,
             llm_model_name=Config.DEFAULT_LLM_MODEL,
+            faiss_service=self.faiss_service,  # self.faiss_service 전달
             top_k=Config.DEFAULT_TOP_K,
             similarity_threshold=Config.DEFAULT_SIMILARITY_THRESHOLD,
         )

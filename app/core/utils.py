@@ -66,7 +66,7 @@ def get_faiss_index_path(repo_name: str, index_type: str) -> str:
 
     Args:
         repo_name: 저장소 이름
-        index_type: 인덱스 타입 ("code" 또는 "document")
+        index_type: 인덱스 타입 ("code"만 지원)
 
     Returns:
         FAISS 인덱스 경로
@@ -76,8 +76,6 @@ def get_faiss_index_path(repo_name: str, index_type: str) -> str:
     """
     if index_type == "code":
         return os.path.join(Config.FAISS_INDEX_BASE_DIR, f"{repo_name}_code")
-    elif index_type == "document":
-        return os.path.join(Config.FAISS_INDEX_DOCS_DIR, f"{repo_name}_docs")
     else:
         raise ValueError(f"알 수 없는 인덱스 타입입니다: {index_type}")
 
@@ -114,11 +112,12 @@ def check_index_exists(repo_name: str, index_type: str) -> bool:
 
     Args:
         repo_name: 저장소 이름
-        index_type: 인덱스 타입 ("code" 또는 "document")
+        index_type: 인덱스 타입 ("code"만 지원)
 
     Returns:
         인덱스 존재 여부
     """
+    # "document" 타입 처리는 get_faiss_index_path에서 ValueError로 처리됨
     index_path = get_faiss_index_path(repo_name, index_type)
     exists = os.path.exists(index_path)
 
