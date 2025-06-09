@@ -640,11 +640,11 @@ class ReadmeSummary(Resource):
     @repository_ns.response(500, "서버 내부 오류", error_model)
     def post(self):
         """README 내용을 AI로 요약합니다. Express에서 호출되는 API."""
+        import asyncio  # 함수 내부에서 임포트
+
         data = {}
         try:
             data = request.get_json()
-
-            # 입력 데이터 검증 (간단한 검증 후 로깅, 상세 검증은 서비스 레이어에서)
             repo_name = data.get("repo_name")
             readme_content_length = len(data.get("readme_content", ""))
 
@@ -665,9 +665,7 @@ class ReadmeSummary(Resource):
                     message=error_message, error_code="MISSING_DATA", status_code=400
                 )
 
-            readme_content = data.get(
-                "readme_content"
-            )  # repo_name은 위에서 이미 가져옴
+            readme_content = data.get("readme_content")
 
             if not repo_name:
                 error_message = "저장소 이름이 필요합니다."
@@ -691,8 +689,10 @@ class ReadmeSummary(Resource):
                     status_code=400,
                 )
 
-            # README 요약 수행
-            summary = readme_summarizer.summarize_readme(repo_name, readme_content)
+            # README 요약 수행 (비동기 함수 동기 실행)
+            summary = asyncio.run(
+                readme_summarizer.summarize_readme(repo_name, readme_content)
+            )
 
             if summary:
                 response_data = {
@@ -709,7 +709,6 @@ class ReadmeSummary(Resource):
                     data=response_data, message=message, status_code=200
                 )
             else:
-                # 요약 실패 시 기본 설명 생성
                 fallback_description = readme_summarizer.create_fallback_description(
                     repo_name
                 )
@@ -725,7 +724,7 @@ class ReadmeSummary(Resource):
                 )
                 logger.warning(
                     f"README 요약 실패, 기본 설명 사용: {repo_name}. API 응답 메시지: {message}"
-                )  # 기존 로그 유지하며 추가 정보 제공
+                )
                 logger.info(
                     f"API 요청 성공 (대체 응답): [{request.method}] {request.path}. 응답 코드: 200. 메시지: {message}"
                 )
@@ -733,7 +732,7 @@ class ReadmeSummary(Resource):
                     data=response_data, message=message, status_code=200
                 )
 
-        except ValidationError as e:  # 이 경우는 보통 validate_xxx 함수에서 발생
+        except ValidationError as e:
             error_message = str(e)
             error_code = "VALIDATION_ERROR"
             status_code = 400

@@ -103,16 +103,17 @@ class ReadmeSummarizer:
                         f"'{repo_name}' 저장소 README 요약 API 호출 시도 ({attempt + 1}/{self.max_retries})"
                     )
 
-                    response = await loop.run_in_executor(  # 비동기 호출로 변경
-                        None,
-                        client.models.generate_content,
-                        model=self.llm_model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=self.temperature,
-                        ),
-                    )
-                    # 응답에서 텍스트 안전하게 추출
+                    # run_in_executor에 키워드 인자를 직접 넘기면 안 되므로 래퍼 함수 사용
+                    def call_generate_content():
+                        return client.models.generate_content(
+                            model=self.llm_model,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                temperature=self.temperature,
+                            ),
+                        )
+
+                    response = await loop.run_in_executor(None, call_generate_content)
                     summary = gemini_service.extract_text_from_response(response)
 
                     if summary:

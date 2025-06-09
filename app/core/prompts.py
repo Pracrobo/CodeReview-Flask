@@ -126,7 +126,7 @@ README:
 
         snippets_info = "\n\n".join(
             [
-                f"파일: {snippet['file']}\n코드:\n{snippet['code']}\n관련도: {snippet['relevance']}%"
+                f"파일: {snippet['file']}\n코드:\n{snippet['code']}\n관련도: {snippet['relevance']}%\n설명: {snippet.get('explanation','')}"
                 for snippet in code_snippets
             ]
         )

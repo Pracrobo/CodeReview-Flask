@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional, Tuple
 
 import faiss
+import numpy as np  # numpy 임포트
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
@@ -14,6 +15,20 @@ from .embeddings import GeminiAPIEmbeddings
 faiss.omp_set_num_threads(1)
 
 logger = logging.getLogger(__name__)
+
+
+# 유틸리티 함수 (searcher.py에서 이동)
+def normalize_vector(vec: np.ndarray) -> np.ndarray:
+    """벡터 정규화"""
+    norm = np.linalg.norm(vec) + 1e-8  # 0으로 나누는 것을 방지
+    return vec / norm
+
+
+def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """코사인 유사도 계산"""
+    v1_normalized = normalize_vector(vec1)
+    v2_normalized = normalize_vector(vec2)
+    return float(np.dot(v1_normalized, v2_normalized))
 
 
 class FAISSService:
@@ -286,3 +301,103 @@ class FAISSService:
         except Exception as e:
             logger.warning(f"인덱스 통계 수집 실패: {e}")
             return {}
+
+    def search_documents(
+        self,
+        vector_store: FAISS,
+        query_text: str,  # 사전 처리된 텍스트 쿼리
+        top_k: int,
+        similarity_threshold: float,
+    ) -> List[Tuple[Document, float]]:
+        """
+        FAISS 벡터 저장소에서 유사한 문서를 검색합니다.
+
+        Args:
+            vector_store: 검색을 수행할 FAISS 벡터 저장소.
+            query_text: 임베딩되고 검색될 사전 처리된 텍스트 쿼리.
+            top_k: 반환할 상위 결과 수.
+            similarity_threshold: 결과를 필터링할 유사도 임계값.
+
+        Returns:
+            (문서, 유사도_점수) 튜플의 리스트.
+        """
+        if not vector_store:
+            logger.warning("검색을 위한 벡터 저장소가 제공되지 않았습니다.")
+            return []
+        if not hasattr(self.embeddings, "embed_query"):
+            logger.error("임베딩 객체에 'embed_query' 메서드가 없습니다.")
+            raise EmbeddingError("임베딩 객체가 쿼리 임베딩을 지원하지 않습니다.")
+
+        try:
+            logger.debug(f"쿼리 임베딩 생성: '{query_text[:100]}...'")
+            query_embedding = self.embeddings.embed_query(query_text)
+            query_embedding_np = np.array(query_embedding, dtype=np.float32)
+
+            if not vector_store.index or vector_store.index.ntotal == 0:
+                logger.info("벡터 저장소 인덱스가 비어 있거나 초기화되지 않았습니다.")
+                return []
+
+            num_vectors = vector_store.index.ntotal
+            doc_score_pairs = []
+
+            logger.debug(f"{num_vectors}개 벡터에 대해 유사도 검색 시작...")
+            for idx in range(num_vectors):
+                docstore_id = vector_store.index_to_docstore_id.get(idx)
+                if docstore_id is None:
+                    logger.warning(
+                        f"인덱스 {idx}에 대한 docstore ID를 찾을 수 없습니다. 건너뜁니다."
+                    )
+                    continue
+
+                doc = vector_store.docstore._dict.get(docstore_id)
+                if doc is None:
+                    logger.warning(
+                        f"docstore ID '{docstore_id}'에 대한 문서를 찾을 수 없습니다. 건너뜁니다."
+                    )
+                    continue
+
+                try:
+                    # FAISS 인덱스에서 벡터를 float32로 재구성해야 할 수 있음
+                    doc_embedding_np = np.array(
+                        vector_store.index.reconstruct(idx), dtype=np.float32
+                    )
+                except Exception as e_reconstruct:
+                    logger.warning(
+                        f"인덱스 {idx}에서 벡터 재구성 실패: {e_reconstruct}. 건너뜁니다."
+                    )
+                    continue
+
+                sim = cosine_similarity(query_embedding_np, doc_embedding_np)
+                doc_score_pairs.append((doc, sim))
+
+            doc_score_pairs.sort(key=lambda x: x[1], reverse=True)
+
+            top_results = doc_score_pairs[:top_k]
+
+            filtered_results = [
+                (doc, score)
+                for doc, score in top_results
+                if score >= similarity_threshold
+            ]
+
+            # searcher.py의 임계값 완화 로직과 유사하게 처리
+            if not filtered_results and similarity_threshold > 0.1 and top_results:
+                logger.info(
+                    f"유사도 임계값({similarity_threshold}) 만족 결과 없어 0.1로 완화 시도."
+                )
+                filtered_results = [
+                    (doc, score) for doc, score in top_results if score >= 0.1
+                ]
+
+            logger.info(
+                f"문서 검색 완료: 총 {len(doc_score_pairs)}개 중, top_k={top_k} 적용 후 {len(top_results)}개, "
+                f"유사도 임계값({similarity_threshold}) 적용 후 {len(filtered_results)}개 선택됨."
+            )
+            return filtered_results
+
+        except EmbeddingError as e_embed:  # embed_query에서 발생 가능
+            logger.error(f"쿼리 임베딩 중 오류 발생: {e_embed}")
+            raise
+        except Exception as e:
+            logger.error(f"문서 검색 중 예기치 않은 오류 발생: {e}", exc_info=True)
+            return []
