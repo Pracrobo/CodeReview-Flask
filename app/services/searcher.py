@@ -6,7 +6,6 @@ from app.core.config import Config
 from app.core.exceptions import EmbeddingError, RAGError
 from app.core.prompts import prompts
 from app.services.gemini_service import gemini_service
-from app.services.issue_analyzer import issue_analyzer
 from app.services.faiss_service import FAISSService  # FAISSService 임포트
 
 faiss.omp_set_num_threads(1)
@@ -41,30 +40,6 @@ def preprocess_text(text):
     text = re.sub(r"[^\w\s]", "", text)
     text = text.lower()
     return text
-
-
-def analyze_issue_and_generate_insights(
-    vector_stores,
-    issue_data,
-):
-    """이슈 분석 및 AI 인사이트 생성"""
-    try:
-
-        from app.services.embeddings import GeminiAPIEmbeddings
-
-        embeddings_instance = GeminiAPIEmbeddings(
-            model_name=Config.DEFAULT_EMBEDDING_MODEL,
-            document_task_type="RETRIEVAL_DOCUMENT",
-            query_task_type="RETRIEVAL_QUERY",
-        )
-        faiss_service_instance = FAISSService(embeddings=embeddings_instance)
-        result = issue_analyzer.analyze_issue(
-            vector_stores, issue_data, faiss_service_instance
-        )
-        return result
-    except Exception as e:
-        logger.error(f"이슈 분석 중 오류 발생: {e}", exc_info=True)
-        raise RAGError(f"이슈 분석 실패: {e}") from e
 
 
 def search_and_rag(
