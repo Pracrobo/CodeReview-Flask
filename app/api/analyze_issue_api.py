@@ -7,6 +7,7 @@ from app.services.embeddings import GeminiAPIEmbeddings
 from app.core.config import Config
 from app.core.utils import extract_repo_name_from_url, get_faiss_index_path
 from app.core.exceptions import ServiceError, RAGError
+from app.services.repository_context_service import repository_context_service
 
 # 네임스페이스 생성
 issue_ns = Namespace("issue", description="이슈 분석 관련 API")
@@ -55,6 +56,29 @@ issue_analysis_response_model = issue_ns.model(
             )
         ),
         "solutionSuggestion": fields.String(description="AI 해결 제안"),
+    },
+)
+
+# 저장소 컨텍스트 기반 질문 응답 모델
+repository_context_request_model = issue_ns.model(
+    "RepositoryContextRequest",
+    {
+        "repo_id": fields.Integer(required=True, description="저장소 ID"),
+        "question": fields.String(required=True, description="질문 내용"),
+        "readme_filename": fields.String(description="README 파일명"),
+        "license_filename": fields.String(description="LICENSE 파일명"),
+        "contributing_filename": fields.String(description="CONTRIBUTING 파일명"),
+    },
+)
+
+repository_context_response_model = issue_ns.model(
+    "RepositoryContextResponse",
+    {
+        "answer": fields.String(description="AI 답변"),
+        "context_files": fields.List(
+            fields.String, description="컨텍스트로 사용된 파일 목록"
+        ),
+        "repo_info": fields.Raw(description="저장소 정보"),
     },
 )
 
@@ -204,3 +228,46 @@ class AnalyzeIssue(Resource):
                 "codeSnippets": [],
                 "solutionSuggestion": "시스템 오류로 인해 분석을 완료할 수 없습니다.",
             }, 500
+
+    @issue_ns.doc("ask_repository_question")
+    @issue_ns.expect(repository_context_request_model, validate=True)
+    @issue_ns.response(200, "질문 답변 완료", repository_context_response_model)
+    @issue_ns.response(400, "잘못된 요청")
+    @issue_ns.response(404, "저장소 또는 파일을 찾을 수 없음")
+    @issue_ns.response(500, "서버 내부 오류")
+    def post(self):
+        """저장소 컨텍스트를 기반으로 질문에 답변"""
+        try:
+            data = request.get_json()
+
+            repo_id = data.get("repo_id")
+            question = data.get("question")
+            readme_filename = data.get("readme_filename")
+            license_filename = data.get("license_filename")
+            contributing_filename = data.get("contributing_filename")
+
+            if not repo_id or not question:
+                return {"error": "repo_id와 question은 필수 항목입니다."}, 400
+
+            # 저장소 컨텍스트 기반 질문 답변
+            result = repository_context_service.answer_question_with_context(
+                repo_id=repo_id,
+                question=question,
+                readme_filename=readme_filename,
+                license_filename=license_filename,
+                contributing_filename=contributing_filename,
+            )
+
+            return {
+                "answer": result["answer"],
+                "context_files": result["context_files"],
+                "repo_info": result["repo_info"],
+            }, 200
+
+        except FileNotFoundError as e:
+            return {"error": str(e)}, 404
+        except ServiceError as e:
+            return {"error": str(e)}, 500
+        except Exception as e:
+            current_app.logger.error(f"저장소 컨텍스트 질문 답변 중 오류: {e}")
+            return {"error": "서버 내부 오류가 발생했습니다."}, 500
