@@ -246,7 +246,7 @@ class AnalyzeIssue(Resource):
             license_filename = data.get("license_filename")
             contributing_filename = data.get("contributing_filename")
 
-            if not repo_id or not question:
+            if repo_id is None or question is None:
                 return {"error": "repo_id와 question은 필수 항목입니다."}, 400
 
             # 저장소 컨텍스트 기반 질문 답변
