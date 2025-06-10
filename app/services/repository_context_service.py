@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Dict, Optional, Any
 
+from google.genai import types
+
 from app.core.config import Config
 from app.core.exceptions import ServiceError
 from app.core.prompts import prompts
@@ -18,7 +20,7 @@ class RepositoryContextService:
 
     def answer_question_with_context(
         self,
-        repo_id: int,
+        repo_name: str,
         question: str,
         readme_filename: Optional[str] = None,
         license_filename: Optional[str] = None,
@@ -28,7 +30,7 @@ class RepositoryContextService:
         저장소 파일들을 컨텍스트로 하여 질문에 답변
 
         Args:
-            repo_id: 저장소 ID
+            repo_name: 저장소 이름 (예: "owner/repo_name")
             question: 질문 내용
             readme_filename: README 파일명
             license_filename: LICENSE 파일명
@@ -38,11 +40,11 @@ class RepositoryContextService:
             답변 결과 딕셔너리
         """
         try:
-            logger.info(f"저장소 컨텍스트 질문 답변 시작: repo_id={repo_id}")
+            logger.info(f"저장소 컨텍스트 질문 답변 시작: repo_name={repo_name}")
 
-            # 저장소 정보 조회 (실제 구현시 DB에서 조회)
-            repo_info = self._get_repository_info_from_db(repo_id)
-            repo_name = repo_info.get("full_name", f"repo_{repo_id}")
+            # 저장소 정보 조회
+            repo_info = self._get_repository_info_from_db(repo_name)
+            # repo_name은 이미 full_name 형태이므로 그대로 사용
 
             # 저장소 파일들 읽기
             context_files = []
@@ -85,59 +87,55 @@ class RepositoryContextService:
                 "answer": answer,
                 "context_files": context_files,
                 "repo_info": {
-                    "repo_id": repo_id,
-                    "name": repo_info.get("name", ""),
-                    "full_name": repo_name,
+                    "name": repo_info.get(
+                        "name", repo_name.split("/")[-1]
+                    ),  # repo_name에서 추출
+                    "full_name": repo_name,  # 전달받은 repo_name 사용
                     "description": repo_info.get("description", ""),
                 },
             }
 
-            logger.info(f"저장소 컨텍스트 질문 답변 완료: repo_id={repo_id}")
+            logger.info(f"저장소 컨텍스트 질문 답변 완료: repo_name={repo_name}")
             return result
 
         except Exception as e:
             logger.error(f"저장소 컨텍스트 질문 답변 중 오류: {e}", exc_info=True)
             raise ServiceError(f"질문 답변 실패: {e}") from e
 
-    def _get_repository_info_from_db(self, repo_id: int) -> Dict[str, Any]:
-        """DB에서 저장소 정보 조회"""
+    def _get_repository_info_from_db(
+        self, repo_name: str
+    ) -> Dict[str, Any]:  # repo_id -> repo_name
+        """DB에서 저장소 정보 조회 (실제로는 파일 시스템 기반으로 추정)"""
         try:
-            # 실제로는 SQLAlchemy나 다른 ORM을 사용하여 DB에서 조회
-            # 여기서는 간단히 파일 시스템에서 추정
+            # repo_name은 "owner/repo" 형태라고 가정
+            # 클론된 저장소 경로
+            cloned_repo_path = os.path.join(Config.BASE_CLONED_DIR, repo_name)
 
-            # 클론된 저장소 목록에서 repo_id에 해당하는 저장소 찾기
-            cloned_dirs = os.listdir(Config.BASE_CLONED_DIR)
-
-            # repo_id를 통해 저장소를 식별하는 로직이 필요
-            # 임시로 첫 번째 디렉토리 사용 (실제로는 DB 연동 필요)
-            if cloned_dirs:
-                for dir_name in cloned_dirs:
-                    full_path = os.path.join(Config.BASE_CLONED_DIR, dir_name)
-                    if os.path.isdir(full_path):
-                        return {
-                            "repo_id": repo_id,
-                            "name": (
-                                dir_name.split("/")[-1] if "/" in dir_name else dir_name
-                            ),
-                            "full_name": dir_name,
-                            "description": f"{dir_name} 저장소",
-                        }
-
-            # 기본값 반환
-            return {
-                "repo_id": repo_id,
-                "name": f"repository_{repo_id}",
-                "full_name": f"owner/repository_{repo_id}",
-                "description": "저장소 설명",
-            }
+            if os.path.isdir(cloned_repo_path):
+                # 저장소 이름 부분 (예: "my_repo")
+                repo_name_part = repo_name.split("/")[-1]
+                return {
+                    "name": repo_name_part,
+                    "full_name": repo_name,  # 입력받은 repo_name 사용
+                    "description": f"{repo_name} 저장소",
+                }
+            else:
+                logger.warning(
+                    f"클론된 저장소 '{repo_name}'을(를) 찾을 수 없습니다: {cloned_repo_path}"
+                )
+                # 기본값 반환
+                return {
+                    "name": repo_name.split("/")[-1] if "/" in repo_name else repo_name,
+                    "full_name": repo_name,
+                    "description": "저장소 정보를 찾을 수 없습니다.",
+                }
 
         except Exception as e:
-            logger.warning(f"저장소 정보 조회 실패: {e}")
+            logger.warning(f"저장소 정보 조회 실패 (repo_name: {repo_name}): {e}")
             return {
-                "repo_id": repo_id,
-                "name": f"repository_{repo_id}",
-                "full_name": f"owner/repository_{repo_id}",
-                "description": "저장소 설명",
+                "name": repo_name.split("/")[-1] if "/" in repo_name else repo_name,
+                "full_name": repo_name,
+                "description": "저장소 정보 조회 중 오류 발생",
             }
 
     def _read_repository_file(self, repo_name: str, filename: str) -> Optional[str]:
@@ -179,6 +177,7 @@ class RepositoryContextService:
     ) -> str:
         """컨텍스트를 기반으로 질문에 대한 답변 생성"""
         try:
+            # get_client()를 사용하여 클라이언트 인스턴스를 받음
             client = gemini_service.get_client()
             if not client:
                 logger.error(
@@ -190,16 +189,21 @@ class RepositoryContextService:
                 question=question, repo_info=repo_info, file_contents=file_contents
             )
 
+            # client.models.generate_content를 사용하여 API 호출
             response = client.models.generate_content(
                 model=self.llm_model,
                 contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.4,  # 창의적이면서도 정확한 답변을 위한 중간 온도
+                ),
             )
 
             answer = gemini_service.extract_text_from_response(response)
             return answer or "AI 답변을 생성할 수 없습니다."
 
         except Exception as e:
-            logger.warning(f"질문 답변 생성 실패: {e}")
+            # 오류 로깅 시 스택 트레이스 포함
+            logger.error(f"질문 답변 생성 실패: {e}", exc_info=True)
             return "AI 답변 생성 중 오류가 발생했습니다."
 
 

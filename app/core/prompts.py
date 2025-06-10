@@ -227,16 +227,17 @@ README:
         repo_name = repo_info.get("full_name", "Unknown Repository")
         repo_description = repo_info.get("description", "")
 
-        context_parts.append("## 저장소 정보\n")
+        context_parts.append("## 저장소 정보")  # 개행은 join 시 처리
         context_parts.append(f"- 저장소명: {repo_name}")
         if repo_description:
             context_parts.append(f"- 설명: {repo_description}")
-        context_parts.append("")
 
         # 파일 내용들
         for file_type, content in file_contents.items():
-            context_parts.append(f"## {file_type} 파일 내용\n")
-            context_parts.append(f"```\n{content}\n```\n")
+            context_parts.append(
+                f"\n## {file_type} 파일 내용"
+            )  # 각 파일 섹션 전에 개행 추가
+            context_parts.append(f"```\n{content}\n```")  # 개행은 join 시 처리
 
         context_text = "\n".join(context_parts)
 
@@ -248,11 +249,11 @@ README:
 {question}
 
 ## 답변 가이드라인
-1. 제공된 저장소 파일 내용을 기반으로 답변하세요
-2. 구체적이고 실용적인 정보를 제공하세요
-3. 필요한 경우 파일 내용을 인용하여 근거를 제시하세요
-4. 저장소의 특성을 고려한 맞춤형 답변을 해주세요
-5. 한국어로 답변하되, 기술 용어는 적절히 병기하세요
+1. 제공된 저장소 파일 내용을 기반으로 답변하세요.
+2. 구체적이고 실용적인 정보를 제공하세요.
+3. 필요한 경우 파일 내용을 인용하여 근거를 제시하세요.
+4. 저장소의 특성을 고려한 맞춤형 답변을 해주세요.
+5. 한국어로 답변하되, 기술 용어는 적절히 병기하세요.
 
 답변:"""
 

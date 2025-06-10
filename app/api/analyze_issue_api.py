@@ -59,12 +59,30 @@ issue_analysis_response_model = issue_ns.model(
     },
 )
 
-# 저장소 컨텍스트 기반 질문 응답 모델
+# 저장소 컨텍스트 기반 질문 응답 모델 - 메시지 배열 지원
 repository_context_request_model = issue_ns.model(
     "RepositoryContextRequest",
     {
-        "repo_id": fields.Integer(required=True, description="저장소 ID"),
-        "question": fields.String(required=True, description="질문 내용"),
+        "repo_name": fields.String(
+            required=True, description="저장소 이름 (예: owner/repo_name)"
+        ),
+        "messages": fields.List(  # question 대신 messages 배열
+            fields.Nested(
+                issue_ns.model(
+                    "Message",
+                    {
+                        "role": fields.String(
+                            required=True, description="메시지 역할 (user/assistant)"
+                        ),
+                        "content": fields.String(
+                            required=True, description="메시지 내용"
+                        ),
+                    },
+                )
+            ),
+            required=True,
+            description="대화 메시지 목록",
+        ),
         "readme_filename": fields.String(description="README 파일명"),
         "license_filename": fields.String(description="LICENSE 파일명"),
         "contributing_filename": fields.String(description="CONTRIBUTING 파일명"),
@@ -229,9 +247,12 @@ class AnalyzeIssue(Resource):
                 "solutionSuggestion": "시스템 오류로 인해 분석을 완료할 수 없습니다.",
             }, 500
 
+
+@issue_ns.route("/ask-repository")  # repository-question -> ask-repository로 변경
+class AskRepositoryQuestion(Resource):
     @issue_ns.doc("ask_repository_question")
     @issue_ns.expect(repository_context_request_model, validate=True)
-    @issue_ns.response(200, "질문 답변 완료", repository_context_response_model)
+    @issue_ns.marshal_with(repository_context_response_model)
     @issue_ns.response(400, "잘못된 요청")
     @issue_ns.response(404, "저장소 또는 파일을 찾을 수 없음")
     @issue_ns.response(500, "서버 내부 오류")
@@ -240,34 +261,54 @@ class AnalyzeIssue(Resource):
         try:
             data = request.get_json()
 
-            repo_id = data.get("repo_id")
-            question = data.get("question")
+            repo_name = data.get("repo_name")
+            messages = data.get("messages")  # question -> messages
             readme_filename = data.get("readme_filename")
             license_filename = data.get("license_filename")
             contributing_filename = data.get("contributing_filename")
 
-            if repo_id is None or question is None:
-                return {"error": "repo_id와 question은 필수 항목입니다."}, 400
+            if (
+                not repo_name
+                or not messages
+                or not isinstance(messages, list)
+                or len(messages) == 0
+            ):
+                issue_ns.abort(
+                    400,
+                    "repo_name과 messages(배열)는 필수 항목이며, 비어있을 수 없습니다.",
+                )
+
+            # 마지막 사용자 메시지를 질문으로 사용
+            user_messages = [msg for msg in messages if msg.get("role") == "user"]
+            if not user_messages:
+                issue_ns.abort(400, "사용자 메시지가 필요합니다.")
+
+            # 가장 최근의 사용자 메시지를 질문으로 사용
+            question = user_messages[-1].get("content", "")
+            if not question.strip():
+                issue_ns.abort(400, "질문 내용이 비어있습니다.")
 
             # 저장소 컨텍스트 기반 질문 답변
             result = repository_context_service.answer_question_with_context(
-                repo_id=repo_id,
-                question=question,
+                repo_name=repo_name,
+                question=question,  # 마지막 사용자 메시지를 질문으로 사용
                 readme_filename=readme_filename,
                 license_filename=license_filename,
                 contributing_filename=contributing_filename,
             )
 
-            return {
-                "answer": result["answer"],
-                "context_files": result["context_files"],
-                "repo_info": result["repo_info"],
-            }, 200
+            return result
 
         except FileNotFoundError as e:
-            return {"error": str(e)}, 404
+            current_app.logger.warning(f"파일 찾기 오류 (저장소 컨텍스트 질문): {e}")
+            issue_ns.abort(404, str(e))
         except ServiceError as e:
-            return {"error": str(e)}, 500
+            current_app.logger.error(
+                f"서비스 오류 (저장소 컨텍스트 질문): {e}", exc_info=True
+            )
+            issue_ns.abort(500, str(e))
         except Exception as e:
-            current_app.logger.error(f"저장소 컨텍스트 질문 답변 중 오류: {e}")
-            return {"error": "서버 내부 오류가 발생했습니다."}, 500
+            current_app.logger.error(
+                f"저장소 컨텍스트 질문 답변 중 예상치 못한 오류: {e}", exc_info=True
+            )
+            issue_ns.abort(500, "서버 내부 오류가 발생했습니다.")
