@@ -248,7 +248,7 @@ class AnalyzeIssue(Resource):
             }, 500
 
 
-@issue_ns.route("/ask-repository")  # repository-question -> ask-repository로 변경
+@issue_ns.route("/ask-repository")   # repository-question -> ask-repository로 변경
 class AskRepositoryQuestion(Resource):
     @issue_ns.doc("ask_repository_question")
     @issue_ns.expect(repository_context_request_model, validate=True)
