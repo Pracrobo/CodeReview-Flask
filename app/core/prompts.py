@@ -215,6 +215,48 @@ README:
             "unknown": "{repo_name} 저장소입니다.",
         }
 
+    @staticmethod
+    def get_repository_context_answer_prompt(
+        question: str, repo_info: dict, file_contents: dict
+    ) -> str:
+        """저장소 컨텍스트 기반 질문 답변 프롬프트"""
+
+        context_parts = []
+
+        # 저장소 정보
+        repo_name = repo_info.get("full_name", "Unknown Repository")
+        repo_description = repo_info.get("description", "")
+
+        context_parts.append("## 저장소 정보")  # 개행은 join 시 처리
+        context_parts.append(f"- 저장소명: {repo_name}")
+        if repo_description:
+            context_parts.append(f"- 설명: {repo_description}")
+
+        # 파일 내용들
+        for file_type, content in file_contents.items():
+            context_parts.append(
+                f"\n## {file_type} 파일 내용"
+            )  # 각 파일 섹션 전에 개행 추가
+            context_parts.append(f"```\n{content}\n```")  # 개행은 join 시 처리
+
+        context_text = "\n".join(context_parts)
+
+        return f"""당신은 GitHub 저장소에 대한 전문가입니다. 제공된 저장소의 파일 내용을 바탕으로 사용자의 질문에 정확하고 도움이 되는 답변을 제공해주세요.
+
+{context_text}
+
+## 사용자 질문
+{question}
+
+## 답변 가이드라인
+1. 제공된 저장소 파일 내용을 기반으로 답변하세요.
+2. 구체적이고 실용적인 정보를 제공하세요.
+3. 필요한 경우 파일 내용을 인용하여 근거를 제시하세요.
+4. 저장소의 특성을 고려한 맞춤형 답변을 해주세요.
+5. 한국어로 답변하되, 기술 용어는 적절히 병기하세요.
+
+답변:"""
+
 
 # 편의를 위한 전역 인스턴스
 prompts = PromptTemplates()
@@ -263,3 +305,12 @@ def get_ai_solution_suggestion_prompt(
 def get_issue_summary_prompt(issue_title: str, issue_body: str) -> str:
     """이슈 요약 프롬프트 (하위 호환성)"""
     return prompts.get_issue_summary_prompt(issue_title, issue_body)
+
+
+def get_repository_context_answer_prompt(
+    question: str, repo_info: dict, file_contents: dict
+) -> str:
+    """저장소 컨텍스트 기반 질문 답변 프롬프트 (하위 호환성)"""
+    return prompts.get_repository_context_answer_prompt(
+        question, repo_info, file_contents
+    )
