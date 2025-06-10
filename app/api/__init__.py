@@ -18,7 +18,9 @@ api = Api(
 
 # 네임스페이스 등록
 from .repository_api import repository_ns
-from .analyze_issue_api import issue_ns  # 새로운 네임스페이스 임포트
+from .analyze_issue_api import issue_ns
+from .chatbot_api import chatbot_ns  # 새로운 네임스페이스 임포트
 
 api.add_namespace(repository_ns, path="/repository")
-api.add_namespace(issue_ns, path="/issue")  # 새로운 네임스페이스 등록
+api.add_namespace(issue_ns, path="/issue")
+api.add_namespace(chatbot_ns, path="/chatbot")  # 새로운 네임스페이스 등록
