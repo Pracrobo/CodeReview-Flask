@@ -217,8 +217,6 @@ class RepositoryContextService:
             logger.error(f"질문 답변 생성 실패: {e}", exc_info=True)
             return "AI 답변 생성 중 오류가 발생했습니다."
 
-    import re
-
     def _clean_answer_content(self, content: str) -> str:
         """AI 답변 후처리"""
         if not content:
