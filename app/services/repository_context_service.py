@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from typing import Dict, Optional, Any
 
 from google.genai import types
@@ -25,6 +26,7 @@ class RepositoryContextService:
         readme_filename: Optional[str] = None,
         license_filename: Optional[str] = None,
         contributing_filename: Optional[str] = None,
+        messages: list = None,
     ) -> Dict[str, Any]:
         """
         저장소 파일들을 컨텍스트로 하여 질문에 답변
@@ -80,7 +82,10 @@ class RepositoryContextService:
 
             # Gemini로 질문 답변 생성
             answer = self._generate_answer_with_context(
-                question=question, repo_info=repo_info, file_contents=file_contents
+                question=question,
+                repo_info=repo_info,
+                file_contents=file_contents,
+                messages=messages,
             )
 
             result = {
@@ -129,7 +134,6 @@ class RepositoryContextService:
                     "full_name": repo_name,
                     "description": "저장소 정보를 찾을 수 없습니다.",
                 }
-
         except Exception as e:
             logger.warning(f"저장소 정보 조회 실패 (repo_name: {repo_name}): {e}")
             return {
@@ -173,11 +177,10 @@ class RepositoryContextService:
             return None
 
     def _generate_answer_with_context(
-        self, question: str, repo_info: Dict[str, Any], file_contents: Dict[str, str]
+        self, question: str, repo_info: Dict[str, Any], file_contents: Dict[str, str], messages: list = None
     ) -> str:
         """컨텍스트를 기반으로 질문에 대한 답변 생성"""
         try:
-            # get_client()를 사용하여 클라이언트 인스턴스를 받음
             client = gemini_service.get_client()
             if not client:
                 logger.error(
@@ -185,8 +188,16 @@ class RepositoryContextService:
                 )
                 return "AI 답변 생성 중 오류가 발생했습니다."
 
+            # 1. 이전 대화 히스토리를 문자열로 합치기
+            history_text = ""
+            if messages:
+                for msg in messages:
+                    who = "질문" if msg.get("role") == "user" else "답변"
+                    history_text += f"{who}: {msg.get('content', '')}\n"
+
+            # 2. 기존 프롬프트 생성
             prompt = prompts.get_repository_context_answer_prompt(
-                question=question, repo_info=repo_info, file_contents=file_contents
+                question=question, repo_info=repo_info, file_contents=file_contents, history_text=history_text
             )
 
             # client.models.generate_content를 사용하여 API 호출
@@ -199,13 +210,28 @@ class RepositoryContextService:
             )
 
             answer = gemini_service.extract_text_from_response(response)
-            return answer or "AI 답변을 생성할 수 없습니다."
+            cleaned_answer = self._clean_answer_content(answer)
+            return cleaned_answer or "AI 답변을 생성할 수 없습니다."
 
         except Exception as e:
-            # 오류 로깅 시 스택 트레이스 포함
             logger.error(f"질문 답변 생성 실패: {e}", exc_info=True)
             return "AI 답변 생성 중 오류가 발생했습니다."
 
+    def _clean_answer_content(self, content: str) -> str:
+        """AI 답변 후처리"""
+        if not content:
+            return ""
+
+        # 불필요한 기호 및 공백 정리
+        content = content.replace('--', '').strip()
+        
+        # 불필요한 연속 줄바꿈을 하나로 통합
+        content = re.sub(r'\n\s*\n', '\n\n', content)
+
+        # 최종 반환이 'return content'가 되도록 .strip()을 별도 라인으로 분리
+        content = content.strip()
+        
+        return content
 
 # 전역 인스턴스
 repository_context_service = RepositoryContextService()

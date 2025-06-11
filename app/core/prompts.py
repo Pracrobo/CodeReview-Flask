@@ -217,7 +217,7 @@ README:
 
     @staticmethod
     def get_repository_context_answer_prompt(
-        question: str, repo_info: dict, file_contents: dict
+        question: str, repo_info: dict, file_contents: dict, history_text: str = ""
     ) -> str:
         """저장소 컨텍스트 기반 질문 답변 프롬프트"""
 
@@ -245,15 +245,18 @@ README:
 
 {context_text}
 
+## 이전 대화
+{history_text}
+
 ## 사용자 질문
 {question}
 
 ## 답변 가이드라인
-1. 제공된 저장소 파일 내용을 기반으로 답변하세요.
-2. 구체적이고 실용적인 정보를 제공하세요.
-3. 필요한 경우 파일 내용을 인용하여 근거를 제시하세요.
-4. 저장소의 특성을 고려한 맞춤형 답변을 해주세요.
-5. 한국어로 답변하되, 기술 용어는 적절히 병기하세요.
+
+1.  저장소의 파일 내용을 기반으로, 정확하고 실용적인 정보를 제공하세요.
+2.  필요시 파일 내용을 인용하여 답변의 근거를 제시해야 합니다.
+3.  저장소의 최신 상태를 고려하여 한국어로 답변하세요 (기술 용어 병기).
+4.  답변은 마크다운 형식으로 작성해야 하며, 이모티콘을 포함하지 않습니다.
 
 답변:"""
 
