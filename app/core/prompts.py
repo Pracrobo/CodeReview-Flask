@@ -217,7 +217,7 @@ README:
 
     @staticmethod
     def get_repository_context_answer_prompt(
-        question: str, repo_info: dict, file_contents: dict
+        question: str, repo_info: dict, file_contents: dict, history_text: str = ""
     ) -> str:
         """저장소 컨텍스트 기반 질문 답변 프롬프트"""
 
@@ -244,6 +244,9 @@ README:
         return f"""당신은 GitHub 저장소에 대한 전문가입니다. 제공된 저장소의 파일 내용을 바탕으로 사용자의 질문에 정확하고 도움이 되는 답변을 제공해주세요.
 
 {context_text}
+
+## 이전 대화
+{history_text}
 
 ## 사용자 질문
 {question}
