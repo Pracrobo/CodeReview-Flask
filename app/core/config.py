@@ -32,8 +32,8 @@ class Config:
     # 인덱싱 및 임베딩 설정
     CHUNK_SIZE = 2000  # 의미 단위로 분할
     CHUNK_OVERLAP = 500  # 문맥 보존 강화
-    EMBEDDING_BATCH_SIZE = 50  # Gemini API 임베딩 요청 시 배치 크기
-    FAISS_ADD_BATCH_SIZE = 100  # FAISS 인덱스에 문서 추가 시 배치 크기
+    EMBEDDING_BATCH_SIZE = 64  # Gemini API 임베딩 요청 시 배치 크기
+    FAISS_ADD_BATCH_SIZE = 128  # FAISS 인덱스에 문서 추가 시 배치 크기
     MAX_RETRIES = 10  # API 호출 최대 재시도 횟수
     EMBEDDING_DIMENSION = 1024  # 임베딩 벡터 차원 설정
 
@@ -46,14 +46,14 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # 검색 설정
-    DEFAULT_TOP_K = 10
-    DEFAULT_SIMILARITY_THRESHOLD = 0.3
+    DEFAULT_TOP_K = 15
+    DEFAULT_SIMILARITY_THRESHOLD = 0.4
 
     # API 서비스 설정 추가
     API_VERSION = "v1"
     MAX_REPOSITORIES = 100  # 최대 저장소 개수 제한
     REQUEST_TIMEOUT = 300  # 요청 타임아웃 (초)
-    MAX_REPO_SIZE_MB = 10  # 최대 저장소 크기 (MB)
+    MAX_REPO_SIZE_MB = 50  # 최대 저장소 크기 (MB)
 
 
 # 지원 언어, 확장자, Langchain Enum 매핑

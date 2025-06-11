@@ -96,17 +96,7 @@ class RepositoryIndexer:
         primary_language: str,
         progress_callback=None,
     ) -> Optional[object]:
-        """코드 인덱스를 생성합니다.
-
-        Args:
-            local_path: 로컬 저장소 경로
-            repo_name: 저장소 이름
-            primary_language: 주 사용 언어
-            progress_callback: 진행 상황 콜백 함수 (선택사항)
-
-        Returns:
-            생성된 코드 벡터 스토어 또는 None
-        """
+        """코드 인덱스를 생성합니다."""
         logger.info("=== 코드 인덱싱 시작 ===")
 
         if not self.document_loader.is_supported_language(primary_language):
@@ -128,7 +118,7 @@ class RepositoryIndexer:
 
         # 코드 파일 로드
         if progress_callback:
-            progress_callback("code_loading", "코드 파일 로드 중")
+            progress_callback("code_loading", "코드 파일 로드 중", None)
         file_extension = self.document_loader.get_code_file_extension(primary_language)
         if not file_extension:
             logger.warning("파일 확장자를 찾을 수 없습니다.")
@@ -147,9 +137,12 @@ class RepositoryIndexer:
             documents, primary_language
         )
 
-        # FAISS 인덱스 생성
+        # 임베딩에 진행 상황 콜백 설정
         if progress_callback:
-            progress_callback("code_embedding", "code FAISS 인덱스 생성 시작")
+            self.embeddings.set_progress_callback(progress_callback)
+            progress_callback("code_embedding", "코드 임베딩 시작", None)
+
+        # FAISS 인덱스 생성
         return self.faiss_service.create_index_from_documents(
             split_documents, index_path, "code"
         )

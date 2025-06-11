@@ -231,7 +231,7 @@ class PromptTemplates:
     - **(C) 실제 발생한 문제/에러는 무엇인지 (Actual Problem/Error)**
     - **(D) 관련된 주요 기술 용어(함수/클래스/에러명 등)는 무엇인지 (Key Technical Terms)**
 
-2.  **[구조화 요약]** 식별된 정보(A, B, C, D)를 조합하여, 아래 '요약 템플릿'을 참고하여 2-3 문장의 간결한 한국어 요약을 생성합니다.
+2.  **[구조화 요약]** 식별된 정보(A, B, C, D)를 조합하여, 아래 '요약 템플릿'을 참고하여 간결한 한국어 요약을 생성합니다.
 
 ## 요약 템플릿
 "[A] 시, [B]가 기대되나 실제로는 [C] 문제가 발생합니다. 특히 [D]와 관련된 부분에서 에러가 발생하는 것으로 보입니다."
@@ -254,7 +254,7 @@ class PromptTemplates:
 
 ---
 
-## 핵심 요약 (2-3 문장):
+## 핵심 요약:
 """
 
     # ===== 프롬프트 설정 관리 =====
@@ -369,9 +369,9 @@ def get_readme_summary_prompt(repo_name: str, readme_content: str) -> str:
     return prompts.get_readme_summary_prompt(repo_name, readme_content)
 
 
-def get_issue_to_question_prompt(issue_title: str, issue_body: str) -> str:
+def get_issue_to_query_prompt(issue_title: str, issue_body: str) -> str:
     """이슈를 질문으로 변환하는 프롬프트 (하위 호환성)"""
-    return prompts.get_issue_to_question_prompt(issue_title, issue_body)
+    return prompts.get_issue_to_query_prompt(issue_title, issue_body)
 
 
 def get_ai_solution_suggestion_prompt(

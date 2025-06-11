@@ -137,7 +137,7 @@ class IssueAnalyzer:
                 )
                 return issue_title  # 오류 시 원본 제목 반환
 
-            prompt = prompts.get_issue_to_question_prompt(issue_title, issue_body)
+            prompt = prompts.get_issue_to_query_prompt(issue_title, issue_body)
             response = client.models.generate_content(
                 model=self.llm_model,
                 contents=prompt,

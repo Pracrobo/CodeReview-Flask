@@ -164,41 +164,49 @@ class IndexingService:
             )
             self._send_completion_callback(repo_url, "failed", str(e))
 
-    def _perform_indexing_with_progress(
-        self, repo_url: str, repo_name: str
-    ) -> Dict[str, Any]:
-        """진행 상황을 추적하면서 인덱싱을 수행합니다.
+    def _perform_indexing_with_progress(self, repo_url: str, repo_name: str):
+        """실제 인덱싱 작업을 수행하면서 진행 상황을 업데이트합니다."""
+        try:
+            # 진행 상황 콜백 함수 정의 (3개 인자 지원)
+            def progress_callback(stage: str, message: str, batch_info: Dict = None):
+                """진행 상황 업데이트 콜백"""
+                try:
+                    self.status_service.update_progress(
+                        repo_name, stage, message, batch_info
+                    )
+                except Exception as e:
+                    logger.error(f"진행 상황 업데이트 중 오류: {e}")
 
-        Args:
-            repo_url: 저장소 URL
-            repo_name: 저장소 이름
+            # 인덱싱 시작
+            logger.info(f"저장소 '{repo_name}' 인덱싱 시작")
 
-        Returns:
-            생성된 벡터 스토어들
-        """
-        # 저장소 정보 확인 및 복제
-        self._update_progress(repo_name, "저장소 정보 확인 중...")
+            # RepositoryIndexer를 통해 인덱싱 수행
+            indexer = RepositoryIndexer()
+            vector_stores = indexer.create_indexes_from_repository(
+                repo_url, progress_callback
+            )
 
-        # 실제 인덱서 호출 전에 각 단계별 콜백 설정
-        def progress_callback(stage: str, message: str):
-            """인덱싱 진행 상황 콜백"""
-            if "저장소 복제" in message or "저장소를 복제" in message:
-                self._update_progress(repo_name, "저장소 복제/로드 중...")
-            elif "코드 인덱싱" in message or "코드 파일" in message:
-                self._update_progress(repo_name, "코드 파일 로드 및 분할 중...")
-            elif "code FAISS 인덱스 생성" in message:
-                self._update_progress(repo_name, "코드 임베딩 생성 중...")
-            elif "문서 인덱싱" in message or "문서 파일" in message:
-                self._update_progress(repo_name, "문서 파일 로드 및 분할 중...")
-            elif "document FAISS 인덱스 생성" in message:
-                self._update_progress(repo_name, "문서 임베딩 생성 중...")
+            # 인덱싱 완료 처리
+            if vector_stores and vector_stores.get("code"):
+                logger.info(f"저장소 '{repo_name}' 인덱싱 완료")
+                self.status_service.complete_indexing(repo_name)
+                return vector_stores
+            else:
+                error_msg = "코드 인덱스 생성에 실패했습니다."
+                logger.error(f"저장소 '{repo_name}' 인덱싱 실패: {error_msg}")
+                self.status_service.fail_indexing(repo_name, error_msg)
+                raise IndexingError(error_msg)
 
-        # 인덱서에 콜백 전달하여 실행
-        vector_stores = self.indexer.create_indexes_from_repository(
-            repo_url, progress_callback=progress_callback
-        )
+        except Exception as e:
+            error_msg = f"인덱싱 중 오류 발생: {str(e)}"
+            logger.error(
+                f"저장소 '{repo_name}' 인덱싱 오류: {error_msg}", exc_info=True
+            )
 
-        return vector_stores
+            if repo_name:
+                self.status_service.fail_indexing(repo_name, error_msg)
+
+            raise IndexingError(error_msg)
 
     def _send_completion_callback(
         self, repo_url: str, status: str, error_message: Optional[str] = None
@@ -273,15 +281,27 @@ class IndexingService:
             repo_name, {"progress_message": message}
         )
 
+    def update_progress(
+        self, repo_name: str, stage: str, message: str, batch_info: Dict = None
+    ) -> None:
+        """진행 상황 업데이트 - StatusService로 위임"""
+        try:
+            self.status_service.update_progress(repo_name, stage, message, batch_info)
+        except Exception as e:
+            logger.error(f"진행 상황 업데이트 오류 ({repo_name}): {e}")
+
+    def _calculate_eta(self, repo_name: str, current_progress: float) -> tuple:
+        """예상 완료 시간 계산 - StatusService로 위임"""
+        try:
+            return self.status_service._calculate_eta(repo_name, current_progress)
+        except Exception as e:
+            logger.error(f"ETA 계산 오류 ({repo_name}): {e}")
+            return None, "계산 중..."
+
     def _set_completion_status(
         self, repo_name: str, vector_stores: Dict[str, Any]
     ) -> None:
-        """완료 상태를 설정합니다.
-
-        Args:
-            repo_name: 저장소 이름
-            vector_stores: 생성된 벡터 스토어들
-        """
+        """완료 상태를 설정합니다."""
         completed_time = datetime.now(timezone.utc).isoformat()
 
         final_status_update = {
