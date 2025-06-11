@@ -208,28 +208,12 @@ class RepositoryContextService:
             logger.error(f"질문 답변 생성 실패: {e}", exc_info=True)
             return "AI 답변 생성 중 오류가 발생했습니다."
 
+    import re
+
     def _clean_answer_content(self, content: str) -> str:
-        """AI 답변 후처리 (불필요한 마크다운, 코드, 링크, 이미지, 태그 등 제거)"""
+        """AI 답변 후처리"""
         if not content:
             return ""
-
-        # --- 추가된 규칙: 제목 양쪽의 * 제거 ---
-        # '* 제목 *' 처럼 양쪽에 공백과 *가 있는 경우를 먼저 제거합니다.
-        # re.MULTILINE 플래그를 사용해 각 줄마다 이 규칙을 적용합니다.
-        content = re.sub(r"^\s*\*\s(.*?)\s\*\s*$", r"\1", content, flags=re.MULTILINE)
-
-        # --- 기존 규칙 강화: 일반적인 기울임꼴 * 제거 ---
-        # AI가 생성하는 '*텍스트*' 패턴을 제거합니다. 이 규칙으로 대부분의 남은 *가 처리됩니다.
-        content = re.sub(r"\*(.*?)\*", r"\1", content)
-        
-        # 마크다운 헤더 제거: #, ## 등
-        content = re.sub(r"^\s*#+\s*(.*)", r"\1", content, flags=re.MULTILINE)
-
-        # 마크다운 목록 기호 제거: *, -, + 등 (줄 시작 부분)
-        content = re.sub(r"^\s*[\*\-\+]\s*(.*)", r"\1", content, flags=re.MULTILINE)
-
-        # **굵은 글씨** 처리 (사용자 가이드라인에서는 허용하지만, AI가 잘못 사용할 경우를 대비해 제거 로직 유지)
-        content = re.sub(r"\*{2}(.*?)\*{2}", r"\1", content)
 
         # 불필요한 기호 및 공백 정리
         content = content.replace('--', '').strip()
@@ -241,7 +225,6 @@ class RepositoryContextService:
         content = content.strip()
         
         return content
-
 
 # 전역 인스턴스
 repository_context_service = RepositoryContextService()
