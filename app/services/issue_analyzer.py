@@ -277,16 +277,13 @@ class IssueAnalyzer:
                 )
                 continue
 
-            # 코드 길이를 500자로 제한
-            code = code_content[:500]
-
             explanation = (
                 f"이 코드는 이슈와 {round(score * 100, 1)}% 관련되어 있습니다."
             )
             snippets.append(
                 {
                     "file": file_path,
-                    "code": code,
+                    "code": code_content,
                     "relevance": round(score * 100, 1),
                     "explanation": explanation,
                 }
