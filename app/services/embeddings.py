@@ -155,6 +155,9 @@ class GeminiAPIEmbeddings(Embeddings):
             f"병렬 임베딩 시작. 총 배치: {total_batches}, 클라이언트: {len(clients)}개"
         )
 
+        # 진행 상황 콜백 함수가 있다면 사용
+        progress_callback = getattr(self, "_progress_callback", None)
+
         with ThreadPoolExecutor(max_workers=len(clients)) as executor:
             futures = []
 
@@ -178,10 +181,26 @@ class GeminiAPIEmbeddings(Embeddings):
 
             successful_count = 0
             failed_count = 0
+            completed_batches = 0
 
             for future in as_completed(futures):
                 try:
                     result = future.result()
+                    completed_batches += 1
+
+                    # 진행 상황 업데이트
+                    if progress_callback:
+                        batch_info = {
+                            "completed_batches": completed_batches,
+                            "total_batches": total_batches,
+                        }
+                        # 3개 인자로 호출
+                        progress_callback(
+                            "code_embedding",
+                            f"임베딩 진행 중 ({completed_batches}/{total_batches})",
+                            batch_info,
+                        )
+
                     if result["success"]:
                         for i, embedding in enumerate(result["embeddings"]):
                             original_idx = result["indices"][i]
@@ -204,6 +223,10 @@ class GeminiAPIEmbeddings(Embeddings):
             logger.warning("모든 문서의 임베딩 생성에 실패했습니다.")
 
         return final_embeddings, sorted(list(set(failed_original_indices)))
+
+    def set_progress_callback(self, callback):
+        """진행 상황 콜백 함수 설정"""
+        self._progress_callback = callback
 
     def embed_query(self, text):
         """단일 쿼리 임베딩 생성"""
