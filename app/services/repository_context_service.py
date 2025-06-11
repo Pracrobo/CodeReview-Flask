@@ -110,25 +110,45 @@ class RepositoryContextService:
     def _get_repository_info_from_db(
         self, repo_name: str
     ) -> Dict[str, Any]:  # repo_id -> repo_name
-        """DB에서 저장소 정보 조회 (실제로는 파일 시스템 기반으로 추정)"""
+        """GitHub API에서 저장소 정보 조회 (시스템 토큰 사용)"""
         try:
-            # repo_name은 "owner/repo" 형태라고 가정
-            # 클론된 저장소 경로
+            from app.services.github_service import GitHubService
+
+            # 시스템 토큰으로 GitHub 서비스 초기화
+            github_service = GitHubService()
+            repo_url = f"https://github.com/{repo_name}"
+
+            # GitHub API로 저장소 정보 조회
+            repo_info = github_service.get_repository_info(repo_url)
+
+            logger.info(f"GitHub API에서 저장소 정보 조회 성공: {repo_name}")
+            return {
+                "name": repo_info.get("name", repo_name.split("/")[-1]),
+                "full_name": repo_info.get("full_name", repo_name),
+                "description": repo_info.get("description", ""),
+                "language": repo_info.get("language"),
+                "stars": repo_info.get("stars", 0),
+            }
+
+        except Exception as e:
+            logger.warning(
+                f"GitHub API 저장소 정보 조회 실패 (repo_name: {repo_name}): {e}"
+            )
+
+            # 폴백: 파일 시스템 기반 정보
             cloned_repo_path = os.path.join(Config.BASE_CLONED_DIR, repo_name)
 
             if os.path.isdir(cloned_repo_path):
-                # 저장소 이름 부분 (예: "my_repo")
                 repo_name_part = repo_name.split("/")[-1]
                 return {
                     "name": repo_name_part,
-                    "full_name": repo_name,  # 입력받은 repo_name 사용
+                    "full_name": repo_name,
                     "description": f"{repo_name} 저장소",
                 }
             else:
                 logger.warning(
                     f"클론된 저장소 '{repo_name}'을(를) 찾을 수 없습니다: {cloned_repo_path}"
                 )
-                # 기본값 반환
                 return {
                     "name": repo_name.split("/")[-1] if "/" in repo_name else repo_name,
                     "full_name": repo_name,
@@ -177,7 +197,11 @@ class RepositoryContextService:
             return None
 
     def _generate_answer_with_context(
-        self, question: str, repo_info: Dict[str, Any], file_contents: Dict[str, str], messages: list = None
+        self,
+        question: str,
+        repo_info: Dict[str, Any],
+        file_contents: Dict[str, str],
+        messages: list = None,
     ) -> str:
         """컨텍스트를 기반으로 질문에 대한 답변 생성"""
         try:
@@ -197,7 +221,10 @@ class RepositoryContextService:
 
             # 2. 기존 프롬프트 생성
             prompt = prompts.get_repository_context_answer_prompt(
-                question=question, repo_info=repo_info, file_contents=file_contents, history_text=history_text
+                question=question,
+                repo_info=repo_info,
+                file_contents=file_contents,
+                history_text=history_text,
             )
 
             # client.models.generate_content를 사용하여 API 호출
@@ -223,15 +250,16 @@ class RepositoryContextService:
             return ""
 
         # 불필요한 기호 및 공백 정리
-        content = content.replace('--', '').strip()
-        
+        content = content.replace("--", "").strip()
+
         # 불필요한 연속 줄바꿈을 하나로 통합
-        content = re.sub(r'\n\s*\n', '\n\n', content)
+        content = re.sub(r"\n\s*\n", "\n\n", content)
 
         # 최종 반환이 'return content'가 되도록 .strip()을 별도 라인으로 분리
         content = content.strip()
-        
+
         return content
+
 
 # 전역 인스턴스
 repository_context_service = RepositoryContextService()

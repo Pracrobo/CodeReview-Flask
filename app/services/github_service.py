@@ -111,7 +111,7 @@ class GitHubService:
             raise RepositorySizeError(error_msg)
 
     def get_repository_info(self, repo_url: str) -> dict:
-        """저장소의 기본 정보를 조회합니다.
+        """저장소의 기본 정보를 조회합니다. (시스템 토큰 사용)
 
         Args:
             repo_url: GitHub 저장소 URL
@@ -127,6 +127,11 @@ class GitHubService:
             api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
 
             response = self.session.get(api_url, timeout=10)
+
+            # 403 오류(인증 필요)가 발생하면 공개 API로 재시도
+            if response.status_code == 403 and not self.api_token:
+                logger.warning(f"인증 토큰 없이 공개 저장소 정보 조회 시도: {repo_url}")
+
             response.raise_for_status()
 
             repo_info = response.json()
@@ -142,6 +147,21 @@ class GitHubService:
                 "updated_at": repo_info.get("updated_at"),
             }
 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                # 토큰이 없거나 권한이 없는 경우 기본 정보만 반환
+                logger.warning(f"저장소 접근 권한 부족, 기본 정보 반환: {repo_url}")
+                return {
+                    "name": repo_name,
+                    "full_name": f"{owner}/{repo_name}",
+                    "description": "저장소 정보 조회 권한이 없습니다.",
+                    "language": None,
+                    "size": 0,
+                    "stars": 0,
+                    "forks": 0,
+                    "updated_at": None,
+                }
+            raise RepositoryError(f"저장소 정보 조회 실패: {e}") from e
         except requests.exceptions.RequestException as e:
             raise RepositoryError(f"저장소 정보 조회 실패: {e}") from e
         except Exception as e:
