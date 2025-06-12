@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'aissue-flask-api',
       script: 'bash',
-      args: '-c "/home/ubuntu/miniconda3/envs/py312_aissue/bin/python -m gunicorn run:app --bind 127.0.0.1:3002 --workers 2 --timeout 180"',
+      args: '-c "/home/ubuntu/miniconda3/envs/py312_aissue/bin/python -m gunicorn run:app --bind 127.0.0.1:3002 --timeout 300"',
       interpreter: 'none',
       cwd: '/home/ubuntu/AIssue/AIssue-BE-Flask/',
     },
