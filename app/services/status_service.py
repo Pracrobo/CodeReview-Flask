@@ -77,14 +77,12 @@ class StatusService:
             상태 데이터 딕셔너리
         """
         code_exists = check_index_exists(repo_name, "code")
-        doc_exists = check_index_exists(repo_name, "document")
 
-        if code_exists or doc_exists:
+        if code_exists:
             return {
                 "status": "completed",
                 "repo_name": repo_name,
                 "code_index_status": "completed" if code_exists else "not_found",
-                "document_index_status": "completed" if doc_exists else "not_found",
                 "progress": 100,
                 "progress_message": "인덱스 파일이 존재합니다 (상세 기록 없음)",
                 "last_updated_time": self._get_current_timestamp(),
@@ -364,7 +362,6 @@ class StatusService:
                 "error": None,
                 "error_code": None,
                 "code_index_status": "pending",
-                "document_index_status": "pending",
                 "progress": 0,
                 "progress_message": "인덱싱 작업 시작 대기 중...",
                 "estimated_completion": None,
@@ -407,9 +404,6 @@ class StatusService:
                 "progress_message": f"인덱싱 실패: {error_msg}",
                 "code_index_status": self._get_failed_status(
                     current_status.get("code_index_status")
-                ),
-                "document_index_status": self._get_failed_status(
-                    current_status.get("document_index_status")
                 ),
                 "eta_text": "실패",
             }

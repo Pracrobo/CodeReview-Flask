@@ -308,9 +308,6 @@ class IndexingService:
             "status": "completed",
             "end_time": completed_time,
             "code_index_status": self._get_index_status(vector_stores.get("code")),
-            "document_index_status": self._get_index_status(
-                vector_stores.get("document")
-            ),
             "progress_message": "인덱싱이 완료되었습니다.",
         }
 
