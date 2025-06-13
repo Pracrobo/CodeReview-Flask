@@ -46,14 +46,14 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # 검색 설정
-    DEFAULT_TOP_K = 15
+    DEFAULT_TOP_K = 10
     DEFAULT_SIMILARITY_THRESHOLD = 0.4
 
     # API 서비스 설정 추가
     API_VERSION = "v1"
     MAX_REPOSITORIES = 100  # 최대 저장소 개수 제한
     REQUEST_TIMEOUT = 300  # 요청 타임아웃 (초)
-    MAX_REPO_SIZE_MB = 50  # 최대 저장소 크기 (MB)
+    MAX_REPO_SIZE_MB = 30  # 최대 저장소 크기 (MB)
 
 
 # 지원 언어, 확장자, Langchain Enum 매핑
