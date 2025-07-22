@@ -1,4 +1,4 @@
-name: Deploy Flask Server (AIssue-BE-Flask)
+name: Deploy Flask Server (CodeReview-Flask)
 
 on:
   push:

@@ -35,7 +35,7 @@ class GitHubService:
         self.session.headers.update(
             {
                 "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "AIssue-Repository-Analyzer/1.0",
+                "User-Agent": "CodeReview-Repository-Analyzer/1.0",
             }
         )
 

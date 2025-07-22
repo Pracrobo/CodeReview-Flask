@@ -26,7 +26,7 @@ def create_app(config_class=Config):
     def home():
         app.logger.info("루트 경로 요청됨")
         return {
-            "service": "AIssue Repository RAG 분석 서비스",
+            "service": "CodeReview Repository RAG 분석 서비스",
             "version": Config.API_VERSION,
             "status": "running",
             "swagger_docs": "/docs/",

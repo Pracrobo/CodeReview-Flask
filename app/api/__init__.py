@@ -11,7 +11,7 @@ api_bp = Blueprint("api", __name__)
 api = Api(
     api_bp,
     version="1.0",
-    title="AIssue Repository RAG 분석 API",
+    title="CodeReview Repository RAG 분석 API",
     description="GitHub 저장소의 코드와 문서를 분석하여 RAG 기반 검색을 제공하는 API",
     doc="/docs/",
 )

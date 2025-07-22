@@ -43,7 +43,7 @@ class IssueAnalyzer:
 
             start_time = time.time()
             logger.info(
-                f"[AIssue] 이슈 분석 시작: (이슈 ID: {issue_id}, 저장소: {repo_url})"
+                f"[CodeReview] 이슈 분석 시작: (이슈 ID: {issue_id}, 저장소: {repo_url})"
             )
 
             # AI 요약 생성
@@ -56,7 +56,7 @@ class IssueAnalyzer:
                 )
 
                 logger.info(
-                    f"[AIssue] 코드 검색용 질문 변환 완료: '{search_question[:80]}'"
+                    f"[CodeReview] 코드 검색용 질문 변환 완료: '{search_question[:80]}'"
                 )
 
                 search_results_docs_scores = self._search_related_code(
@@ -69,7 +69,7 @@ class IssueAnalyzer:
 
                 if not search_results_docs_scores:
                     logger.warning(
-                        f"[AIssue] 코드 검색 결과가 없습니다. (이슈 ID: {issue_id}, 저장소: {repo_url})"
+                        f"[CodeReview] 코드 검색 결과가 없습니다. (이슈 ID: {issue_id}, 저장소: {repo_url})"
                     )
 
                 related_files = self._extract_related_files(
@@ -79,7 +79,7 @@ class IssueAnalyzer:
                 )
                 code_snippets = self._extract_code_snippets(search_results_docs_scores)
             else:
-                logger.info("[AIssue] 벡터 스토어가 없어 코드 검색을 건너뜁니다.")
+                logger.info("[CodeReview] 벡터 스토어가 없어 코드 검색을 건너뜁니다.")
                 search_results_docs_scores = []
                 related_files = []
                 code_snippets = []
@@ -98,12 +98,12 @@ class IssueAnalyzer:
 
             elapsed = round(time.time() - start_time, 2)
             logger.info(
-                f"[AIssue] 이슈 분석 완료: (이슈 ID: {issue_id}, 저장소: {repo_url}, 소요: {elapsed}초)"
+                f"[CodeReview] 이슈 분석 완료: (이슈 ID: {issue_id}, 저장소: {repo_url}, 소요: {elapsed}초)"
             )
             return result
 
         except Exception as e:
-            logger.error(f"[AIssue] 이슈 분석 중 오류 발생: {e}", exc_info=True)
+            logger.error(f"[CodeReview] 이슈 분석 중 오류 발생: {e}", exc_info=True)
             raise RAGError(f"이슈 분석 실패: {e}") from e
 
     def _generate_issue_summary(self, issue_title: str, issue_body: str) -> str:
@@ -301,7 +301,7 @@ class IssueAnalyzer:
         normalized_path = raw_path.replace("\\", "/")
 
         # 로컬 시스템 경로 패턴 제거
-        # 예: C:\src\AIssue\AIssue-BE-Flask\cloned_repos\scrapy\ 부분 제거
+        # 예: C:\src\CodeReview-Flask\cloned_repos\scrapy\ 부분 제거
         patterns = [
             r"^[A-Za-z]:[/\\].*?[/\\]cloned_repos[/\\][^/\\]+[/\\]",  # Windows 절대 경로
             r"^/.*?/cloned_repos/[^/]+/",  # Unix 절대 경로
