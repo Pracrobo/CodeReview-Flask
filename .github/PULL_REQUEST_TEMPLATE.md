@@ -1,14 +1,14 @@
-## 🧐 어떤 PR인가요? (What's in this PR?)
+## 어떤 PR인가요? (What's in this PR?)
 
 -
 -
 
-### 🖥️ Backend 작업 내용
+### Backend 작업 내용
 
 - [ ]
 - [ ]
 
-## ✅ PR Checklist
+## PR Checklist
 
 **기본 사항**
 
