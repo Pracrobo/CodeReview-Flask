@@ -1,6 +1,6 @@
 # AIssue Backend (Flask)
 
-GitHub 이슈 분석 및 해결 지원을 위한 AI 기반 백엔드 서비스입니다.
+GitHub 이슈 분석 및 해결 지원을 위한 AI 기반 서비스입니다.
 
 ## 🚀 실행 방법
 
@@ -11,7 +11,6 @@ python run.py
 
 ## 🧪 테스트 방법
 
-- http://localhost:3002/docs 에서 Swagger 문서를 통해 테스트 가능
 
 ## 📋 프로젝트 개요
 
